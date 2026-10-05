@@ -1,0 +1,248 @@
+extends Node3D
+
+const WoPaths := preload("wo_paths.gd")
+
+## What somebody ELSE looks like: a Kenney blocky character, scaled to the player's hull,
+## wearing their side's colour on the torso and turned to where they are looking. Client
+## side only; a server never builds one.
+##
+## [b]This game drew no person at all until 2026-09-24.[/b] Every player's own view was
+## first person, and third person showed the platform rather than the player — so nobody had
+## needed a body until a networked client, whose other players were drawn as nothing. Their
+## node moved, their beacon marked them, and a platform leaned toward a patch of empty deck.
+## See `WoPlayer.present_body` for when one is shown.
+##
+## [b]Top level, and placed by its caller every frame.[/b] The player node is the
+## simulation's: on a remote player it is written by the interpolator once a frame, but on
+## the local player and on every offline stand-in it moves once a TICK, and a body hung off
+## it would step at the tick rate while the camera beside it is blended between ticks. So
+## `WoClient.present_frame` hands every body the position this frame draws — the node for a
+## remote player, `render_state()` for one this process simulates — and nothing here
+## computes one.
+##
+## [b]A Kenney character rather than primitives,[/b] because the showdown is a gunfight and
+## a capsule does not say which way somebody is facing from forty metres; the kit's head,
+## arms and a walk cycle do, for 113 KB. One mesh set and six atlases, the ones
+## mg-buses-from-hell chose for being people; which one a player wears comes from their id,
+## so every client dresses the same person the same way. [b]The side is on the torso[/b], as
+## a tint over the atlas: in a game with up to six teams the first thing anybody needs to
+## read off a body is whether to shoot it, and the kit paints nobody in a team's colour.
+##
+## [b]Loaded by path and repainted by hand, for the pack.[/b] A delivered game is mounted
+## under `res://dot_cloud/<id>/<version>/`; the model is loaded through [WoPaths.rebase], and
+## every surface is given its atlas explicitly rather than trusting the import's own external
+## dependency, which records an absolute `res://assets/…` path that does not exist once
+## mounted. mg-buses-from-hell shipped a round where every crate's mesh loaded and none of
+## their textures did.
+
+const CHANNEL := "wo.figure"
+
+## Rebased where it is defined, like the atlases below: see [method WoPaths.rebase].
+static var MODEL := WoPaths.rebase("res://assets/kenney/characters/character-a.glb")
+
+## Six ordinary people. Every Blocky Character carries byte-identical geometry and UVs, so
+## the variety is a texture and nothing else — vendoring six GLBs would be six copies of one.
+static var ATLASES: Array[String] = [
+	WoPaths.rebase("res://assets/kenney/characters/Textures/texture-a.png"),
+	WoPaths.rebase("res://assets/kenney/characters/Textures/texture-b.png"),
+	WoPaths.rebase("res://assets/kenney/characters/Textures/texture-c.png"),
+	WoPaths.rebase("res://assets/kenney/characters/Textures/texture-e.png"),
+	WoPaths.rebase("res://assets/kenney/characters/Textures/texture-f.png"),
+	WoPaths.rebase("res://assets/kenney/characters/Textures/texture-k.png"),
+]
+
+## How much of the side's colour goes on the torso. Enough to read at the far corner of the
+## ring; not so much that the atlas under it becomes a flat block.
+const TEAM_TINT := 0.62
+
+## Ground speeds, in metres a second, at which the body starts walking and starts running.
+const WALK_FROM := 0.4
+const RUN_FROM := 3.6
+
+## Which atlas this figure wears, and the side colour on it. Read by the suite.
+var atlas: String = ""
+var team_colour: Color = Color.WHITE
+
+## Whether the Kenney model loaded, or the capsule fallback is standing in for it.
+var from_art: bool = false
+
+## The clip playing, for the suite and for `describe()`.
+var clip: StringName = &""
+
+var _model: Node3D = null
+var _anim: AnimationPlayer = null
+
+
+func _init() -> void:
+	# The caller places it; see the class note.
+	top_level = true
+
+
+## Builds the figure to stand [param height] metres tall, feet at this node's origin.
+##
+## [b]Measured, not a constant.[/b] A Blocky Character is 2.7 m; a figure at its own size is
+## half again a player's hull and would stand with its head in the underside of a chopper.
+func build(height: float, atlas_path: String, colour: Color) -> void:
+	atlas = atlas_path
+	team_colour = colour
+	clip = &""
+	_anim = null
+
+	if _model != null:
+		_model.queue_free()
+		_model = null
+
+	var scene: Variant = load(MODEL)
+
+	if scene is PackedScene:
+		_model = (scene as PackedScene).instantiate() as Node3D
+
+	if _model == null:
+		# A capsule rather than nothing. An invisible player is the bug this file exists to
+		# end; a grey one is a player whose art did not ship, which is a lesser thing.
+		DotLog.warn(CHANNEL, "no character model; drawing a capsule", {
+			"path": MODEL,
+		})
+		_model = _capsule(height, colour)
+		add_child(_model)
+		from_art = false
+		return
+
+	add_child(_model)
+	from_art = true
+
+	var bounds := _bounds(_model, Transform3D.IDENTITY)
+	var scale_by := height / maxf(bounds.size.y, 0.01)
+
+	# [b]Turned round, because the kit faces +Z and this family's forward is -Z.[/b]
+	# mg-buses-from-hell's bus chased people cab-last until a render showed it.
+	_model.basis = Basis(Vector3.UP, PI).scaled(Vector3.ONE * scale_by)
+	_model.position = Vector3(0.0, -bounds.position.y * scale_by, 0.0)
+
+	_paint(_model, atlas_path, colour)
+	_anim = _model.find_child("AnimationPlayer", true, false) as AnimationPlayer
+
+
+## Puts the figure where this frame draws its player, facing [param yaw_radians], moving at
+## [param speed] metres a second over the ground.
+func pose(at: Vector3, yaw_radians: float, speed: float) -> void:
+	global_position = at
+	rotation = Vector3(0.0, yaw_radians, 0.0)
+
+	var wanted := &"idle"
+
+	if speed >= RUN_FROM:
+		wanted = &"sprint"
+	elif speed >= WALK_FROM:
+		wanted = &"walk"
+
+	_play(wanted)
+
+
+func _play(wanted: StringName) -> void:
+	if _anim == null or clip == wanted or not _anim.has_animation(wanted):
+		return
+
+	clip = wanted
+	# The kit's clips are imported as one-shots. A walk that stops after one stride reads as
+	# somebody sliding the rest of the way across the platform.
+	var animation := _anim.get_animation(wanted)
+	if animation != null:
+		animation.loop_mode = Animation.LOOP_LINEAR
+	_anim.play(wanted, 0.15)
+
+
+static func _bounds(node: Node, to_root: Transform3D) -> AABB:
+	var out := AABB()
+	var seeded := false
+	var mesh := node as MeshInstance3D
+
+	if mesh != null and mesh.mesh != null:
+		out = to_root * mesh.mesh.get_aabb()
+		seeded = true
+
+	for child in node.get_children():
+		var child_to_root := to_root
+		if child is Node3D:
+			child_to_root = to_root * (child as Node3D).transform
+		var inner := _bounds(child, child_to_root)
+		# An empty AABB is a branch with no mesh in it; merging one would pull the bounds out
+		# to the origin of whatever node it came from.
+		if inner.size == Vector3.ZERO and inner.position == Vector3.ZERO:
+			continue
+		out = inner if not seeded else out.merge(inner)
+		seeded = true
+
+	return out
+
+
+func _paint(root: Node, atlas_path: String, colour: Color) -> void:
+	var texture: Variant = load(WoPaths.rebase(atlas_path))
+
+	if not (texture is Texture2D):
+		DotLog.warn(CHANNEL, "a character atlas is missing", {"path": atlas_path})
+		return
+
+	# Unshaded, as the kit's own material is (`KHR_materials_unlit`), and nearest-filtered
+	# because the atlas is pixel art.
+	var plain := StandardMaterial3D.new()
+	plain.albedo_texture = texture
+	plain.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	plain.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+
+	var side := plain.duplicate() as StandardMaterial3D
+	side.albedo_color = Color.WHITE.lerp(colour, TEAM_TINT)
+
+	for node in _meshes(root):
+		node.material_override = side if node.name == &"torso" else plain
+
+
+static func _meshes(node: Node) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	var as_mesh := node as MeshInstance3D
+
+	if as_mesh != null:
+		out.append(as_mesh)
+
+	for child in node.get_children():
+		out.append_array(_meshes(child))
+
+	return out
+
+
+static func _capsule(height: float, colour: Color) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Capsule"
+
+	var material := StandardMaterial3D.new()
+	material.albedo_color = colour
+
+	var trunk := MeshInstance3D.new()
+	var capsule := CapsuleMesh.new()
+	capsule.radius = 0.35
+	capsule.height = height
+	trunk.mesh = capsule
+	trunk.material_override = material
+	trunk.position = Vector3(0.0, height * 0.5, 0.0)
+	root.add_child(trunk)
+
+	# A nose, so which way they face reads from across the field.
+	var nose := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.16, 0.16, 0.3)
+	nose.mesh = box
+	nose.material_override = material
+	nose.position = Vector3(0.0, height * 0.85, -0.4)
+	root.add_child(nose)
+
+	return root
+
+
+func describe() -> Dictionary:
+	return {
+		"art": from_art,
+		"atlas": atlas.get_file(),
+		"visible": visible,
+		"clip": String(clip),
+		"at": str(global_position.snapped(Vector3.ONE * 0.01)) if is_inside_tree() else "-",
+	}

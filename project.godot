@@ -1,0 +1,42 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="mg-wipeout"
+config/description="Players race obstacle courses over open water; if two or more finish, they fight a final death in a random arena with props to throw and weapons on the floor."
+config/features=PackedStringArray("4.7")
+run/main_scene="res://game/wo.tscn"
+
+[physics]
+
+; [b]Godot's own 9.8, and that is deliberate here where three other 3D games in this
+; family raise it.[/b] Nothing reads this number: [WoConfig.gravity] is what the world
+; and the controller are both tuned against, and [WoGame._apply_gravity] writes it onto
+; this world's own physics SPACE. A project setting does not travel inside a delivered
+; dot-cloud pack, so a game that relied on one plays correctly for a developer and
+; floats on every real client — which is what game-buses-from-hell found by looking at a
+; screenshot of a live server. Leaving this at the engine default means the two numbers
+; can never be confused for each other.
+3d/default_gravity=9.8
+
+[rendering]
+
+; [b]The renderer the delivered client actually runs.[/b] This game is published as a
+; dot-cloud pack and played inside the shell, and that shell is gl_compatibility because
+; the browser is its target — Forward+ does not run in one. A game left on Forward+ is a
+; game whose lighting is tuned against a renderer no player uses.
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+
+; Nearest, because the prototype textures are meant to be read as discrete squares from
+; forty metres up. Filtered, the grid lines blur out at exactly the distance a player is
+; judging a platform's tilt from, which is the one place they are needed.
+textures/canvas_textures/default_texture_filter=0

@@ -1,0 +1,17 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://props/wo_prop_body.gd" id="body"]
+
+[node name="Barrel" type="RigidBody3D"]
+script = ExtResource("body")
+model_path = "res://assets/kenney/survival/barrel.glb"
+model_scale = 3.5
+model_drop = 0.172
+atlas_path = "res://assets/kenney/survival/Textures/colormap.png"
+shape_kind = 1
+shape_size = Vector3(0.41, 1.20, 0.0)
+shape_rotation = Vector3(0, 0, 0)
+can_sleep = true
+contact_monitor = true
+max_contacts_reported = 4
+continuous_cd = true

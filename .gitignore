@@ -1,0 +1,59 @@
+# Godot 4
+.godot/
+/android/
+
+# Every dot-* addon is a separate repository. For local development, symlink them:
+#   ln -s ../../dot-core/addons/dot_core addons/dot_core
+# A shipped build copies them in instead.
+#
+# THIS LIST IS ALSO THE DEPENDENCY MANIFEST. dot-bootstrap derives what to link from
+# these lines rather than keeping a second copy, because the repository that gains a
+# dependency is the repository that has to ignore its link.
+/addons/dot_core
+/addons/dot_entity
+/addons/dot_physics
+/addons/dot_player
+/addons/dot_player_controller
+/addons/dot_props
+/addons/dot_combat
+/addons/dot_match
+/addons/dot_vehicle
+/addons/dot_weapon
+/addons/dot_ui
+/addons/dot_fx
+/addons/dot_net
+/addons/dot_server
+/addons/dot_game
+/addons/dot_chat
+/addons/dot_voice
+/addons/dot_moderation
+/addons/dot_spectate
+/addons/dot_audio
+/addons/dot_stats
+/addons/dot_achievements
+/addons/dot_cloud
+/addons/dot_auth
+/addons/dot_user
+/addons/dot_user_avatar
+/addons/dot_platform
+/addons/zee_weapons
+
+# The courses and arenas: the mg-wipeout-maps repository, linked here by dot-bootstrap off
+# the comment line below (copied, on Windows). A checkout without it plays the one practice
+# course built into game/wo_catalogue.gd, which is a supported state, not a broken one.
+# bootstrap-link: mg-wipeout-maps/courses
+/courses
+
+# Exports
+build/
+export_presets.cfg
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Screenshots are evidence for a review, not assets.
+/screenshots/
+
+# Editors
+.vscode/

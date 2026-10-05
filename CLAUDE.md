@@ -113,7 +113,7 @@ The game's pack does not contain `courses/` (a link, excluded in dot-server-depl
 
 In the order they are worth doing.
 
-1. **Put it live.** Create `gamemann/mg-wipeout` and `gamemann/mg-wipeout-maps` on GitHub, push, tag both (maps first: the game's `server_dependencies` is pinned at install), and add `wipeout` to a server's `TMC_GAMES`. Not done here because publishing and pushing are the owner's call.
+1. **Put it live.** Create `gamemann/mg-wipeout` and `gamemann/mg-wipeout-maps` on GitHub, push, tag both (maps first: the game's `server_dependencies` is pinned at install), and add `gamemann/mg-wipeout` to a server's `TMC_GAMES` (a published game is `<owner>/<name>`; the bare `wipeout` is only dot-server-deploy's local `content/wipeout/`, which `examples/wipeout_client` tests against). Not done here because publishing and pushing are the owner's call.
 2. **A world model in a watcher's hands**, as mg-smash-copter's list says, and a figure holding a carried prop.
 3. **Sounds for the machinery**: an arm's whoosh, a ram's thump, and a sound to go with a tile's red warning.
 4. **Course levels for the nightly quota** — see mg-wipeout-maps' CLAUDE.md for what a level is here.

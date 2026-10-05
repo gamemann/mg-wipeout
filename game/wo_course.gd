@@ -41,6 +41,9 @@ const PLAYER_CROUCHED := 0.9
 ## How far a dropped tile goes, in metres. Out of the way, and back on the same schedule.
 const TILE_DROP := 60.0
 
+## Seconds before a tile drops that it shakes and changes colour. See [method tile_warning].
+const TILE_WARN_SECONDS := 0.6
+
 ## How far below a start gate goes when it opens.
 const GATE_DROP := 80.0
 
@@ -853,6 +856,7 @@ func _pose_piece(piece: Dictionary, t: float) -> void:
 				var rest: Vector3 = tile.get_meta(&"rest", Vector3.ZERO)
 				_place(tile, Transform3D(tile.transform.basis,
 					rest - Vector3(0.0, TILE_DROP if tile_down(piece, index, t) else 0.0, 0.0)))
+				_warn_tile(tile, tile_warning(spec, index, t), t)
 				index += 1
 		"spinner":
 			var arms := node.get_node_or_null(^"Arms") as Node3D
@@ -961,6 +965,53 @@ static func tile_cycle(spec: Dictionary, index: int, t: float) -> float:
 	var seed := int(spec.get("seed", 1))
 	var offset := float(_mix(seed * 7919 + index * 104729) % 1000) / 1000.0
 	return fposmod(t / float(spec["period"]) + offset, 1.0)
+
+
+## How close tile [param index] is to dropping, 0 (not soon) to 1 (now).
+##
+## [b]A tile that drops with no tell is a coin toss, not an obstacle.[/b] The schedule is a
+## hash of the tile's index, which nobody can read off a floor; what a player CAN read is a
+## tile shaking and turning the hazard colour for the last [constant TILE_WARN_SECONDS]
+## before it goes. A function of the tick like everything else here, so every client shows
+## the same warning at the same moment without being told.
+static func tile_warning(spec: Dictionary, index: int, t: float) -> float:
+	var period := float(spec["period"])
+	var warn := clampf(TILE_WARN_SECONDS / period, 0.0, 0.5)
+	var cycle := tile_cycle(spec, index, t)
+
+	if cycle < float(spec["down"]) or cycle < 1.0 - warn:
+		return 0.0
+
+	return (cycle - (1.0 - warn)) / maxf(warn, 0.0001)
+
+
+## The tell, on the MESH only: the collider stays put, so a warned tile is still exactly as
+## solid as it was and nobody is shaken off it by the warning itself.
+func _warn_tile(tile: Node3D, warning: float, t: float) -> void:
+	var mesh: MeshInstance3D = null
+
+	for child in tile.get_children():
+		if child is MeshInstance3D:
+			mesh = child
+			break
+
+	if mesh == null:
+		return
+
+	if warning <= 0.0:
+		mesh.position = Vector3.ZERO
+		if mesh.get_meta(&"warned", false):
+			mesh.material_override = mesh.get_meta(&"rest_material")
+			mesh.set_meta(&"warned", false)
+		return
+
+	var shake := 0.04 + 0.06 * warning
+	mesh.position = Vector3(sin(t * 61.0) * shake, 0.0, cos(t * 53.0) * shake)
+
+	if not mesh.get_meta(&"warned", false):
+		mesh.set_meta(&"rest_material", mesh.material_override)
+		mesh.material_override = WoTextures.surface(WoTextures.Role.HAZARD, true)
+		mesh.set_meta(&"warned", true)
 
 
 static func _mix(value: int) -> int:
@@ -1215,6 +1266,27 @@ static func _point_segment(point: Vector3, a: Vector3, b: Vector3) -> float:
 
 
 # --- What a stand-in asks -------------------------------------------------------
+
+## Whether an arm at head height — one to duck, not jump — turns within [param radius] of
+## [param at]. Only a spinner is ducked: a pendulum's ball sweeps up through crouching height
+## at the ends of its swing, so a duck under one is a slow crawl into it.
+func high_arm_near(at: Vector3, radius: float) -> bool:
+	for piece in pieces:
+		if str(piece["kind"]) != "spinner":
+			continue
+
+		var spec: Dictionary = piece["spec"]
+
+		if float(spec.get("arm_height", 1.0)) < 1.1:
+			continue
+
+		var hub: Vector3 = spec["at"]
+
+		if Vector2(at.x - hub.x, at.z - hub.z).length() <= float(spec["arm_length"]) + radius:
+			return true
+
+	return false
+
 
 ## Whether running straight from [param from] to [param to] at [param speed], starting on
 ## [param tick], meets no hazard on the way.

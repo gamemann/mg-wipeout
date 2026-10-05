@@ -25,6 +25,12 @@ scene: scenes/wo_server.tscn
 client_scene: game/wo.tscn
 module: game/wo_module.gd
 
+# The courses and arenas, as their own pack: mg-wipeout-maps, mounted on the SERVER only.
+# A client never needs them — the server sends the course it is playing as a document — so
+# they are not a `dependencies:` entry every player would download. The installer pins it.
+server_dependencies:
+  - gamemann/mg-wipeout-maps
+
 cvars:
   wo_course_seconds: "210"
   wo_finale_seconds: "100"

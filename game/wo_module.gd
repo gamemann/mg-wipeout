@@ -164,6 +164,7 @@ func _game_load() -> DotResult:
 	# have built a dozen platforms with nothing listening to `world_rebuilt` — a field the
 	# server knows about and no client is ever told about. They would be invisible floors:
 	# a player stands on nothing and the server says they are fine.
+	_add_delivered_courses(world)
 	world.start()
 
 	log_info("the course is up", world.describe())
@@ -179,6 +180,29 @@ func _game_load() -> DotResult:
 ## join; `player_admitted` is the moment the real ones exist. A wardrobe change and an
 ## operator's `platform_name` are the same thing later. All three end in
 ## [method WoNetBridge.refresh_player], a JOIN everybody already knows how to apply.
+## The courses delivered beside this game: every server-only pack its descriptor names, read
+## for a `courses/` directory where it is mounted.
+##
+## [b]Server-only, because a client never needs a course file.[/b] The server sends the course
+## it is playing in STAGE, so the documents are `server_dependencies` in `game.yml` —
+## mounted on this machine by dot-server's game manager and never put in a client's content
+## sync. Duck-typed through the manager, because a dot-server from before the field has no
+## `current_server_dependencies`, and on one of those this game plays its built-in course.
+func _add_delivered_courses(world: WoGame) -> void:
+	if server == null or world.catalogue == null:
+		return
+
+	var games: Object = server.get("games")
+
+	if games == null or not games.has_method("current_server_dependencies"):
+		return
+
+	for key: String in games.call("current_server_dependencies"):
+		var parts := DotGameDescriptor.split_key(key)
+		var root := DotCloudClient.mount_prefix_for(StringName(parts[0]), parts[1]).path_join("courses")
+		var _read := world.catalogue.add_directory(root)
+
+
 func _wire_identity() -> void:
 	var link := bridge as WoNetBridge
 

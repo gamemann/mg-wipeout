@@ -30,7 +30,7 @@ game/
   wo_services.gd     chat, voice and moderation over dot-game's base (respawn = last checkpoint)
   net/               the codec (STAGE, PROGRESS, PICKUP…), the link, two behaviours, the bridge
 courses -> ../mg-wipeout-maps/courses   (a dot-bootstrap link; .gitignore says so)
-examples/            headless_run (80), headless_courses (every course), headless_net (45), dedicated (23)
+examples/            headless_run (82), headless_courses (every course), headless_net (45), dedicated (23)
 tools/               shot.sh/.gd — render a view; trace_course — where a stand-in falls and why
 ```
 
@@ -76,7 +76,7 @@ They run the document's route (`route` in mg-wipeout-maps). The flags are the wh
 godot --headless --path . --import
 find . -name '*.gd' -not -path './.godot/*' -not -path './addons/*' | while read f; do
     godot --headless --path . --check-only --script "res://${f#./}"; done
-godot --headless --path . res://examples/headless_run.tscn       # 17 sections, 80 checks
+godot --headless --path . res://examples/headless_run.tscn       # 82 checks
 godot --headless --path . res://examples/headless_courses.tscn   # every course run by a stand-in, every arena stood in
 godot --headless --path . res://examples/headless_net.tscn       # 10 sections, 45 checks
 godot --headless --path . res://examples/dedicated.tscn          # 6 sections, 23 checks
@@ -98,12 +98,22 @@ Armed so far: `headless_net`'s obstacle agreement (above) and every suite's CHEC
 - **The belt on a ramp was a wall**: laid flat at the ramp's middle height. A conveyor takes `pitch` now, and its carry follows it.
 - **Hammers 3.2 m apart and rams 3.5 m apart left nowhere to wait**: the one behind reached a person waiting for the one in front. 4.2 m and 4.5 m, waiting halfway / 2.4 m short.
 - **Glossy water is the sky.** The first render had no horizon; the water is darker and matte.
+- **Ducking every arm broke the pendulums.** A bot that crouched for anything at head height crouched under hammers it should have run past. It ducks only when `WoCourse.high_arm_near` finds an arm whose underside is above a standing jump, and otherwise hops at 0.2–0.4 s as before.
+
+## Delivery: the courses are a second pack
+
+The game's pack does not contain `courses/` (a link, excluded in dot-server-deploy's `pack.json`). mg-wipeout-maps is published as a pack of its own and named in `game.yml` under `server_dependencies`, which dot-server mounts on the server only. `WoModule._add_delivered_courses` asks the game manager for `current_server_dependencies()` and adds each mount's `courses/` to the catalogue before `world.start()`; `WoGame.start()` rebuilds the warmup course only if the catalogue still offers it. **The other option was copying the documents into the game's pack at release, and it loses**: a new course would then be a game release and a shell rebuild for every server, where as a separate pack it is a release of a JSON repository. A server with no maps pack plays `wo_practice` and logs it, which is what `dot-server-deploy/examples/wipeout_client.tscn` exists to catch (26 checks; seven fail with the dependency removed).
+
+## Tells
+
+- **A drop-tile is red for `WoCourse.TILE_WARN_SECONDS` (0.6 s) before it drops**, computed from the tick like everything else (`tile_warning`), so both ends agree about it. `tools/shot.sh --view=tiles` draws it.
+- **A high arm is ducked**: The Sweeper's last section is a `high_sweeper` whose arms pass above a crouch and below a standing head.
 
 ## Still to do
 
 In the order they are worth doing.
 
-1. **Deliver it.** Publish the pack, and the courses with it: `courses/` is a link to mg-wipeout-maps and is NOT in this repository's pack, so a delivered server today has only the practice course. Either the maps repository publishes its documents as one small pack the server mounts (and `wo_course_directory` names), or the release copies them in — decide with dot-server-deploy's content rules. Then join it with a real client shell (`dot-server-deploy/examples/*_client.tscn` is the pattern), which is where every game in this family found its delivery bugs.
+1. **Put it live.** Create `gamemann/mg-wipeout` and `gamemann/mg-wipeout-maps` on GitHub, push, tag both (maps first: the game's `server_dependencies` is pinned at install), and add `wipeout` to a server's `TMC_GAMES`. Not done here because publishing and pushing are the owner's call.
 2. **A world model in a watcher's hands**, as mg-smash-copter's list says, and a figure holding a carried prop.
-3. **Sounds for the machinery**: an arm's whoosh, a ram's thump, a tile's warning before it drops (the warning is also missing visually: a tile drops with no tell).
+3. **Sounds for the machinery**: an arm's whoosh, a ram's thump, and a sound to go with a tile's red warning.
 4. **Course levels for the nightly quota** — see mg-wipeout-maps' CLAUDE.md for what a level is here.

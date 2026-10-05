@@ -19,7 +19,7 @@ const WoProgress := preload("../game/wo_progress.gd")
 
 const SECTIONS := 17
 
-const CHECKS := 80
+const CHECKS := 82
 
 const TICK_RATE := 64
 const TICK := 1.0 / float(TICK_RATE)
@@ -265,6 +265,24 @@ func _test_formulas() -> void:
 		"a tile is gone for its `down` share of the cycle", "%.2f" % (float(down) / float(samples)))
 	_check(WoCourse.tile_cycle(tiles["spec"], 1, 0.0) != WoCourse.tile_cycle(tiles["spec"], 2, 0.0),
 		"two tiles are at different points in the cycle")
+
+	# The tell: on for the last moments before a drop, and off the rest of the time.
+	var warned_before := 0
+	var warned_wrongly := 0
+
+	for i in range(1, samples):
+		var t := float(i) * 0.01
+		var warning := WoCourse.tile_warning(tiles["spec"], 4, t)
+
+		if WoCourse.tile_down(tiles, 4, t) and not WoCourse.tile_down(tiles, 4, t - 0.01) \
+				and WoCourse.tile_warning(tiles["spec"], 4, t - 0.02) > 0.0:
+			warned_before += 1
+
+		if warning > 0.0 and WoCourse.tile_down(tiles, 4, t):
+			warned_wrongly += 1
+
+	_check(warned_before > 0, "a tile warns just before it drops", "%d drops warned" % warned_before)
+	_check(warned_wrongly == 0, "and never while it is already gone")
 	_finished()
 
 

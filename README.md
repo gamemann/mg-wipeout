@@ -7,7 +7,7 @@ The courses live in their own repository, [**mg-wipeout-maps**](https://github.c
 ## From Maintainer & WARNING
 This project, along with every asset it is built on, was built initially with **Claude Code** and will continue to be maintained and extended using it. This is because I (`gamemann`) cannot build the entire TMC platform alone (I wish I could lol).
 
-**Please treat this as early and partially tested.** It has four headless test suites and they pass — including one in which a stand-in runs every course to the finish — but none of it has been in front of real players yet, and it has not yet been published and run as a delivered pack through the client shell. Expect rough edges, and please report anything you run into.
+**Please treat this as early and partially tested.** It has four headless test suites and they pass — including one in which a stand-in runs every course to the finish — and it has been published as a signed pack and joined by a real client over a real socket, but none of it has been in front of real players yet. Expect rough edges, and please report anything you run into.
 
 ## A course, and sometimes a fight
 
@@ -85,11 +85,12 @@ A course is a JSON document — a start pad, a list of pieces, checkpoints and a
 
 Every surface is [Kenney's](https://kenney.nl) **Prototype Textures**, one per role: still ground, supports, moving ground, the arena floor, anything that throws you, and the pads. The props are from Kenney's Survival and Car kits, the players are Kenney's Blocky Characters, and the weapons are [zee-dot-weapons](https://github.com/gamemann/zee-dot-weapons)' own. All of it is **CC0**.
 
-The courses are built in code from their documents, so a new course is a JSON file and not a scene.
+The courses are built in code from their documents, so a new course is a JSON file and not a scene. A delivered server gets them as a second pack: this game's `game.yml` names `gamemann/mg-wipeout-maps` under `server_dependencies`, the server mounts it beside the game, and the game reads every course and arena in it. Clients never get the course files; they are sent the one being played as the round begins.
+
+A drop-tile goes red for a moment before it falls, and a high arm is one to duck rather than jump.
 
 ## What does not work yet
 
-- **It has not been delivered.** It has never been published as a signed pack and joined through the client shell, which is where the family's delivery bugs have always been found. The four suites run inside this project, which is the one condition a delivered pack never has.
 - **Stand-ins race by the document's route.** They wait for windows they can compute and hop arms they see coming, which is enough to finish every course, but they are not clever about a crowded beam, and in a final death they are four lines of brain.
 - **The obstacles make no sound of their own.** A knock, a splash, a checkpoint and the gate do; an arm turning and a ram firing do not yet.
 - **No settings screen**, for the reason mg-smash-copter gives: there is no menu to put one in.

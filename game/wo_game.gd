@@ -805,7 +805,14 @@ func start() -> void:
 	# `world_rebuilt` — and a course built before it is a course no client is ever sent. A
 	# player joining during the warmup would stand in an empty sky. The SAME course: the one
 	# the warmup shows is the one the first round plays.
-	if not course_doc.is_empty():
+	#
+	# Unless it is no longer one this server plays: on a delivered server the courses arrive
+	# with the module, after the world opened on the only course it had then — the built-in
+	# practice one, which drops out of the rotation once there is anything else.
+	var id := StringName(str(course_doc.get("id", "")))
+
+	if not course_doc.is_empty() and catalogue != null \
+			and catalogue.playable_courses(config.course_ids).has(id):
 		var _rebuilt := build_stage(course_doc)
 		_place_on_start()
 	else:
@@ -1922,7 +1929,8 @@ func _bot_unstick(player: WoPlayer, command: DotFpsCommand) -> void:
 		_bot_stuck[player.player_id] = [at, _tick, release]
 
 
-## Jumps whatever is about to sweep through where the bot is running.
+## Jumps whatever low thing is about to sweep through where the bot is running, and ducks
+## whatever high thing is.
 ##
 ## [b]A person jumps a low arm; they do not wait for a gap it never leaves.[/b] A sweeper
 ## with two arms at eighty degrees a second covers a six-metre deck for most of every turn,
@@ -1934,17 +1942,38 @@ func _bot_hop(player: WoPlayer, command: DotFpsCommand) -> void:
 		return
 
 	var heading := Vector3(-sin(deg_to_rad(command.yaw)), 0.0, -cos(deg_to_rad(command.yaw)))
-	var speed := config.run_speed
 	var at := player.controller.state.position
 	var limits := Vector3(1.0, 1.0, 1.0)
+	var duck := false
+	var jump := false
+	var high_arm := stage.high_arm_near(at, 3.0)
 
-	for step in [0.2, 0.3, 0.4]:
+	# The same three moments the hop always asked about (a fifth to two fifths of a second:
+	# when a jump's feet are over a low arm), plus the two either side for the duck, which
+	# has to start earlier and last longer.
+	for step in [0.0, 0.2, 0.3, 0.4, 0.6]:
 		var ahead: float = step
-		var where := at + heading * speed * ahead
+		# Crouched, a bot runs at the crouch speed; standing, at the run.
+		var where_standing := at + heading * config.run_speed * ahead
+		var tick := _tick + int(ahead * tick_rate)
 
-		if stage.knock(where, false, _tick + int(ahead * tick_rate), limits) != Vector3.ZERO:
-			command.set_button(DotFpsCommand.BUTTON_JUMP, true)
-			return
+		if stage.knock(where_standing, false, tick, limits) == Vector3.ZERO:
+			continue
+
+		# [b]A high arm is ducked, never jumped.[/b] If crouching clears what standing does
+		# not, the arm is high; jumping into it is the one wrong answer, and the hop below
+		# would give it, because all it knows is that something is coming.
+		var where_crouched := at + heading * config.run_speed * 0.4 * ahead
+
+		if high_arm and stage.knock(where_crouched, true, tick, limits) == Vector3.ZERO:
+			duck = true
+		elif ahead >= 0.2 and ahead <= 0.4:
+			jump = true
+
+	if duck:
+		command.set_button(DotFpsCommand.BUTTON_CROUCH, true)
+	elif jump:
+		command.set_button(DotFpsCommand.BUTTON_JUMP, true)
 
 
 ## Whether [param point] — something to land on — will be under a jump that sets off now:
@@ -2145,6 +2174,9 @@ func describe() -> Dictionary:
 		"props": props.world_count() if props != null else 0,
 		"pickups": pickups.size(),
 		"decided": _winner_name if _decided else "-",
+		"courses": catalogue.courses.size() if catalogue != null else 0,
+		"arenas": catalogue.arenas.size() if catalogue != null else 0,
+		"phase_id": phase,
 	}
 
 

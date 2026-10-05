@@ -30,7 +30,7 @@ var _next: int = 0
 
 
 ## Reads every document under [param directory] (relative to this game's root), and adds the
-## two built in.
+## two built in. Forgets anything read before.
 func load_from(directory: String) -> int:
 	courses.clear()
 	arenas.clear()
@@ -40,20 +40,42 @@ func load_from(directory: String) -> int:
 	_add(practice_arena(), "built-in")
 
 	var root := WoPaths.rebase("res://" + directory.trim_prefix("res://").trim_prefix("/"))
+	var loaded := _read_directory(root)
+	_rebuild_order()
+
+	DotLog.info(CHANNEL, "courses loaded", {
+		"courses": courses.size(), "arenas": arenas.size(), "refused": refused.size(),
+	})
+	return loaded
+
+
+## Adds every document under [param root] — an absolute `res://` path — to what is already
+## loaded. What a server uses for a course pack mounted beside the game.
+##
+## [b]Absolute, and not rebased.[/b] A delivered course pack mounts at its OWN prefix
+## (`res://dot_cloud/<owner>/mg-wipeout-maps/<version>/`), not under this game's, so the
+## rebasing every one of this game's own paths needs would put it in the wrong place.
+func add_directory(root: String) -> int:
+	var loaded := _read_directory(root)
+	_rebuild_order()
+
+	DotLog.info(CHANNEL, "courses added", {
+		"from": root, "read": loaded, "courses": courses.size(), "arenas": arenas.size(),
+	})
+	return loaded
+
+
+func _read_directory(root: String) -> int:
 	var dir := DirAccess.open(root)
 
 	if dir == null:
-		DotLog.info(CHANNEL, "no course directory; playing the built-in course only", {
-			"looked_at": root,
-		})
-		_rebuild_order()
+		DotLog.info(CHANNEL, "no course directory here", {"looked_at": root})
 		return 0
 
 	var files := PackedStringArray()
 
 	for file in dir.get_files():
-		# A delivered pack may hold `.json.remap`-free copies only; anything that is not
-		# a document is somebody's README.
+		# Anything that is not a document is somebody's README.
 		if file.ends_with(".json"):
 			files.append(file)
 
@@ -84,11 +106,6 @@ func load_from(directory: String) -> int:
 		if _add(parsed.value, file):
 			loaded += 1
 
-	_rebuild_order()
-
-	DotLog.info(CHANNEL, "courses loaded", {
-		"courses": courses.size(), "arenas": arenas.size(), "refused": refused.size(),
-	})
 	return loaded
 
 

@@ -6,6 +6,7 @@ extends Node
 ##   tools/shot.sh --view=course --wo-course-ids=wo_spin_cycle
 ##   tools/shot.sh --view=start                     # the start pad, from behind the runners
 ##   tools/shot.sh --view=hazard                    # the first thing that throws you, close
+##   tools/shot.sh --view=tiles --wo-course-ids=wo_trapdoor_run   # drop-tiles, warning in red
 ##   tools/shot.sh --view=third                     # third person, mid-course
 ##   tools/shot.sh --view=arena --arena=wo_arena_pit   # an arena, from above
 ##   tools/shot.sh --view=finale                    # a real final death, from a finisher's eyes
@@ -75,6 +76,14 @@ func _run() -> void:
 			var camera := _free_camera()
 			var start: Vector3 = game.course_doc["start"]["at"]
 			camera.look_at_from_position(start + Vector3(0, 5.5, 10.0), start + Vector3(0, 0, -14.0))
+		"tiles":
+			await _seconds_of(_seconds)
+			var camera := _free_camera()
+			for piece in game.stage.pieces:
+				if str(piece["kind"]) == "tiles":
+					var at: Vector3 = piece["spec"]["at"]
+					camera.look_at_from_position(at + Vector3(6.0, 6.0, 7.0), at)
+					break
 		"hazard":
 			await _seconds_of(_seconds)
 			var hazard := _first_hazard(game)

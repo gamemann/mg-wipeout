@@ -368,6 +368,18 @@ func _game_tick(_tick: int, delta: float) -> void:
 
 	_since_roster_check = 0.0
 	_keep_the_round_full()
+	_note_pings()
+
+
+## Each session's ping onto its player, for the Tab board. dot-server already keeps it.
+func _note_pings() -> void:
+	var world := game as WoGame
+	if world == null or server == null:
+		return
+	for session in server.playing_sessions():
+		var who: WoPlayer = world.players.get(WoNetBridge.player_key(session.userid))
+		if who != null:
+			who.ping_ms = session.ping_ms
 
 
 func _keep_the_round_full() -> void:

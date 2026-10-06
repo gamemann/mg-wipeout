@@ -22,6 +22,9 @@ var _out := "res://screenshots/shot.png"
 var _arena := ""
 var _client: Node = null
 
+## `--board`: the Tab scoreboard held open over the frame.
+var _board: bool = false
+
 
 func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -31,6 +34,8 @@ func _ready() -> void:
 			_seconds = arg.trim_prefix("--seconds=").to_float()
 		elif arg.begins_with("--out="):
 			_out = arg.trim_prefix("--out=")
+		elif arg == "--board":
+			_board = true
 		elif arg.begins_with("--arena="):
 			_arena = arg.trim_prefix("--arena=")
 
@@ -92,6 +97,8 @@ func _run() -> void:
 		_:
 			await _seconds_of(_seconds)
 
+	if _board:
+		_client.call("_show_board", true)
 	await _frames(3)
 	var image := get_viewport().get_texture().get_image()
 	var path := ProjectSettings.globalize_path(_out)

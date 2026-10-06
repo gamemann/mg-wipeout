@@ -128,6 +128,18 @@ extends DotConfig
 ## Whether crossing a checkpoint restores health, so one bad stretch is not a slow death.
 @export var checkpoint_heals: bool = true
 
+# --- Points -------------------------------------------------------------------
+
+@export_group("Points")
+
+## Points for finishing a course, by place: first, second, third... A finisher past the
+## list gets [member finish_points_rest]. They add up over a match and show on the Tab board.
+@export var finish_points: PackedInt32Array = PackedInt32Array([10, 7, 5])
+@export_range(0, 100, 1) var finish_points_rest: int = 3
+
+## Points for being on the side that wins the round, the final death included.
+@export_range(0, 100, 1) var winner_points: int = 10
+
 # --- Weather ------------------------------------------------------------------
 
 @export_group("Weather")

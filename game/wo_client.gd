@@ -63,6 +63,9 @@ var camera: Camera3D = null
 ## Rain and lightning, drawn. See [WoWeatherView].
 var weather: WoWeatherView = null
 var hud: WoHud = null
+
+## The Tab board. See [method board_rows].
+var board: DotScoreboardScreen = null
 var chat: WoClientChat = null
 
 ## What the game sounds like. See [WoAudio].
@@ -835,6 +838,76 @@ func _build_hud() -> void:
 	hud.name = "Hud"
 	add_child(hud)
 
+	# The scoreboard is dot-ui's; what is on it is this game's: a swatch for the player's
+	# avatar, the name, points this match, the round's place, and ping.
+	board = DotScoreboardScreen.new()
+	board.name = "Board"
+	board.title_text = "Wipeout"
+	board.columns = [
+		{"key": &"avatar", "kind": &"icon", "width": 0.0, "size": 22.0},
+		{"key": &"name", "title": "Player", "width": 3.0},
+		{"key": &"points", "title": "Points", "align": HORIZONTAL_ALIGNMENT_RIGHT},
+		{"key": &"place", "title": "Place", "align": HORIZONTAL_ALIGNMENT_RIGHT},
+		{"key": &"ping", "title": "Ping", "align": HORIZONTAL_ALIGNMENT_RIGHT},
+	]
+	board.row_fn = board_rows
+	board.visible = false
+	board.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hud.add_child(board)
+
+
+func _show_board(on: bool) -> void:
+	if board == null:
+		return
+	board.visible = on
+	if on:
+		board.title_text = "Wipeout  -  %s" % str(game.course_doc.get("name", "")) if game != null else "Wipeout"
+		board.refresh()
+
+
+## The rows: best points first, then furthest along. Public so a suite can read them.
+func board_rows() -> Array:
+	var rows: Array = []
+	if game == null:
+		return rows
+	var ids := game.players.keys()
+	ids.sort_custom(func(a: StringName, b: StringName) -> bool:
+		var pa: WoPlayer = game.players[a]
+		var pb: WoPlayer = game.players[b]
+		if pa.points != pb.points:
+			return pa.points > pb.points
+		return String(a) < String(b)
+	)
+	for id in ids:
+		var who: WoPlayer = game.players[id]
+		rows.append({
+			&"avatar": _swatch(who),
+			&"name": who.display_name,
+			&"points": who.points,
+			&"place": (str(who.place) if who.finished else ("out" if who.watching else "-")),
+			&"ping": (str(who.ping_ms) if who.ping_ms >= 0 else "-"),
+			"highlight": who == player,
+		})
+	return rows
+
+
+## A small square in the player's own colour, standing in for an avatar picture until a
+## rendered thumbnail exists. Cached per player.
+var _swatches: Dictionary = {}
+
+func _swatch(who: WoPlayer) -> Texture2D:
+	if _swatches.has(who.player_id):
+		return _swatches[who.player_id]
+	var image := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	# Spread by the golden ratio: Godot's string hash is near-sequential for similar ids
+	# ("bot1" and "bot2" hash one apart), so a hue straight from it made every stand-in the
+	# same colour in the first render.
+	var hue := fposmod(float(posmod(hash(String(who.player_id)), 100003)) * 0.6180339887, 1.0)
+	image.fill(Color.from_hsv(hue, 0.6, 0.9))
+	var texture := ImageTexture.create_from_image(image)
+	_swatches[who.player_id] = texture
+	return texture
+
 
 ## The chat box, before the netcode and before any player exists.
 ##
@@ -1264,6 +1337,11 @@ static func drawn_position(body: WoPlayer, remote: bool) -> Vector3:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# The Tab board, held: shown while the key is down, like every scoreboard in the genre.
+	if event is InputEventKey and (event as InputEventKey).physical_keycode == KEY_TAB and not event.is_echo():
+		_show_board(event.is_pressed())
+		return
+
 	if event is InputEventMouseButton and event.pressed and not _captured:
 		# Handled BEFORE the player guard below, because somebody clicks while the world is
 		# still loading more often than not, and a click swallowed for want of a player is a
@@ -1297,6 +1375,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if key.physical_keycode == KEY_R:
 			_reloading = true
 			return
+
 
 		if key.physical_keycode == KEY_E:
 			# Held, and sent every tick in this game's own input message; the server makes the

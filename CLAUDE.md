@@ -117,6 +117,10 @@ From the brief: obstacles hurt and some are fatal, a death is a body coming apar
 
 A death on a client breaks the figure (dot-player-char's `DotPlayerBodyBreak`, newly linked): lightning, a blast or one in three deaths explode it, the rest lose one to three limbs, seeded from the player so every client agrees, and mended 1.2 s later because the player is already alive in the lounge. `WoWeatherView` draws the rain round the camera, a bolt and a flash on each strike's tick, and dims the sun to under half during a storm (the first render had rain out of a bright sky; the sky material's own colours are still bright). `headless_run`'s *on the course a knock hurts...* (5 checks) and *gusts and lightning...* (6).
 
+## Points, ping and the Tab board (2026-10-06)
+
+`WoPlayer.points` add up over a match: `finish_points` by place (10, 7, 5, then `finish_points_rest` 3) and `winner_points` (10) for the side that wins the round, final death included, on the authority. `net_points` and `net_ping` replicate to everybody; the module copies each session's `ping_ms` (dot-server's) onto its player with the roster check. **Tab holds dot-ui's `DotScoreboardScreen`** with this game's columns: a swatch per player (a stand-in for an avatar picture, coloured by golden-ratio spread because Godot's string hash is near-sequential and `bot1`/`bot2` came out the same colour), name, points, place ("out" when knocked out), ping. `tools/shot.sh --view=third --board` renders it; the first render also found the board's title over the course name and its last column clipped, fixed in dot-ui. **Still a swatch, not the avatar**: a rendered thumbnail of each avatar is the next step.
+
 ## Still to do
 
 In the order they are worth doing.

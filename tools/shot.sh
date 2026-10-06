@@ -9,6 +9,7 @@
 #   tools/shot.sh --view=arena --arena=wo_arena_pit    # an arena, from above
 #   tools/shot.sh --view=finale                        # a real final death, a finisher's eyes
 #   tools/shot.sh --view=course --out=res://screenshots/x.png   # any --wo-* is the game's config
+#   tools/shot.sh --view=third --board                 # with the Tab scoreboard held open
 #
 # xvfb-run because this needs a rendering context and the machines this runs on have no
 # display. `--headless` is NOT a substitute: it gives a null renderer and saves a frame of
@@ -32,6 +33,7 @@ for arg in "$@"; do
         --out=*)     out="${arg#*=}" ;;
         --wo-*)      config+=("$arg") ;;
         --arena=*)   config+=("$arg") ;;
+        --board)     config+=("$arg") ;;
         *)           echo "unknown argument: $arg" >&2; exit 2 ;;
     esac
 done

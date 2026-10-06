@@ -51,6 +51,10 @@ var net_health: float = 100.0
 var net_checkpoint: int = 0
 var net_finished: bool = false
 
+## Points this match and the server's last ping for the player, for everybody's Tab board.
+var net_points: int = 0
+var net_ping: int = 0
+
 ## In the gallery, watching a final death they did not reach.
 var net_watching: bool = false
 
@@ -123,6 +127,8 @@ func _register_net_vars() -> void:
 	replicate(&"net_health", DotNetVar.Type.FLOAT_RANGE).range_of(0.0, 1000.0).bits(12)
 	replicate(&"net_checkpoint", DotNetVar.Type.UINT).bits(6)
 	replicate(&"net_finished", DotNetVar.Type.BOOL)
+	replicate(&"net_points", DotNetVar.Type.UINT).bits(16)
+	replicate(&"net_ping", DotNetVar.Type.UINT).bits(10)
 	replicate(&"net_watching", DotNetVar.Type.BOOL)
 
 	for spec in ZeeWeaponNet.all_specs():
@@ -203,6 +209,8 @@ func pull() -> void:
 
 	net_checkpoint = clampi(player.checkpoint + 1, 0, 63)
 	net_finished = player.finished
+	net_points = clampi(player.points, 0, 65535)
+	net_ping = clampi(player.ping_ms, 0, 1023)
 	net_watching = player.watching
 	net_blind = player.blinded
 	net_beacon = player.beacon
@@ -289,6 +297,8 @@ func _adopt() -> void:
 
 	player.checkpoint = net_checkpoint - 1
 	player.finished = net_finished
+	player.points = net_points
+	player.ping_ms = net_ping
 	player.watching = net_watching
 
 	player.blinded = net_blind

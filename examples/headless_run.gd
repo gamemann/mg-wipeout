@@ -19,7 +19,7 @@ const WoProgress := preload("../game/wo_progress.gd")
 
 const SECTIONS := 19
 
-const CHECKS := 93
+const CHECKS := 94
 
 const TICK_RATE := 64
 const TICK := 1.0 / float(TICK_RATE)
@@ -500,6 +500,9 @@ func _test_one_finisher_wins() -> void:
 	_check(not ended.is_empty() and int(ended[0][1]) == winner.team, "and their side won",
 		str(ended[0]) if not ended.is_empty() else "")
 	_check(game.stage.is_course(), "with no final death", str(game.stage.id()))
+	_check(winner.points == game.config.finish_points[0] + game.config.winner_points and _loser.points == 0,
+		"first across is %d points and the round's win %d more; the loser has none (%d, %d)" % [
+			game.config.finish_points[0], game.config.winner_points, winner.points, _loser.points])
 	_finished()
 
 

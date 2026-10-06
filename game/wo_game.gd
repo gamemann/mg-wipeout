@@ -1132,6 +1132,11 @@ func _decide(winner: int, why: String) -> void:
 	_decided = true
 	_winner = winner
 	_winner_name = why
+
+	if authoritative and winner != 0:
+		for id: StringName in players:
+			if team_of(id) == winner:
+				(players[id] as WoPlayer).points += config.winner_points
 	DotLog.info(CHANNEL, "the round is decided", {"winner": winner, "why": why})
 
 
@@ -1795,6 +1800,9 @@ func _finish(player: WoPlayer) -> void:
 	player.finished = true
 	player.place = _finish_count
 	player.finish_seconds = course_elapsed
+	if authoritative:
+		var table := config.finish_points
+		player.points += table[player.place - 1] if player.place <= table.size() else config.finish_points_rest
 
 	if progress != null:
 		progress.on_finished(player.player_id, player.place, course_elapsed)

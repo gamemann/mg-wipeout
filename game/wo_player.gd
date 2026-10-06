@@ -107,6 +107,12 @@ var _knocked_tick: int = -1000
 
 ## How hard the last knock threw this player, in m/s, and whether it was lightning: what
 ## the server charges in health when it notices the knock. See [member WoConfig.knock_damage_per_speed].
+## Points this match: finishes and round wins. Not reset by a round. See [member WoConfig.finish_points].
+var points: int = 0
+
+## Round trip to the server in ms, as the server last heard it; -1 unknown. For the Tab board.
+var ping_ms: int = -1
+
 var last_knock_speed: float = 0.0
 var last_knock_struck: bool = false
 

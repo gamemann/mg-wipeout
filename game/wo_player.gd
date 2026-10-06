@@ -105,6 +105,11 @@ var knocks: int = 0
 ## tick for as long as the capsule is inside the arm.
 var _knocked_tick: int = -1000
 
+## How hard the last knock threw this player, in m/s, and whether it was lightning: what
+## the server charges in health when it notices the knock. See [member WoConfig.knock_damage_per_speed].
+var last_knock_speed: float = 0.0
+var last_knock_struck: bool = false
+
 ## An administrator's `blind`: this player's own screen is blacked out. Owner-only on the wire.
 var blinded: bool = false
 
@@ -266,12 +271,31 @@ func _after_tick(tick: int, state: DotFpsState) -> void:
 			state.velocity.y = up
 			state.mode = DotFpsState.Mode.AIR
 
+	# The wind, a push every tick it blows; half as hard on somebody standing, because the
+	# ground holds them. In the state, so it is predicted like everything else here.
+	var gust := stage.wind(tick)
+	if gust != Vector3.ZERO:
+		var hold := 0.5 if state.mode == DotFpsState.Mode.GROUND else 1.0
+		state.velocity += gust * hold * delta_for_tick()
+
+	var bolt := stage.strike(state.position, tick)
+	if bolt != Vector3.ZERO:
+		_knocked_tick = tick
+		knocks += 1
+		last_knock_speed = Vector2(bolt.x, bolt.z).length()
+		last_knock_struck = true
+		state.velocity = bolt
+		state.mode = DotFpsState.Mode.AIR
+		state.position.y += 0.05
+
 	if tick - _knocked_tick > 6:
 		var thrown := stage.knock(state.position, state.is_crouched(), tick, knock_limits)
 
 		if thrown != Vector3.ZERO:
 			_knocked_tick = tick
 			knocks += 1
+			last_knock_speed = Vector2(thrown.x, thrown.z).length()
+			last_knock_struck = false
 			state.velocity = thrown
 			state.mode = DotFpsState.Mode.AIR
 			# Lifted clear of the ground this tick, or the motor's ground snap takes the throw

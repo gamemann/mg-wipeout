@@ -184,6 +184,12 @@ func _fresh_world(doc: Dictionary) -> WoGame:
 		await get_tree().process_frame
 
 	var config := WoConfig.new()
+	# What this suite proves is that a course can be FINISHED; a stand-in knocked nine times
+	# before its first checkpoint would be knocked out of the round, which is a fact about the
+	# stand-in. Damage and weather are headless_run's.
+	config.knock_damage_per_speed = 0.0
+	config.wind_chance = 0.0
+	config.storm_chance = 0.0
 	config.warmup_seconds = 0.0
 	config.intermission_seconds = 0.0
 	config.countdown_seconds = 0.5

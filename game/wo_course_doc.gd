@@ -194,6 +194,20 @@ static func _course(doc: Dictionary) -> DotResult:
 
 	doc["checkpoints"] = checkpoints
 
+	# The round's weather, which a server adds to the document it sends. Every number a float,
+	# because JSON has one number type: a tick written as 200 comes back 200.0, and the two
+	# documents' bytes would disagree (headless_net's "the same document, to the byte").
+	if typeof(doc.get("weather")) == TYPE_DICTIONARY:
+		var weather := {"gusts": [], "strikes": []}
+		for key in ["gusts", "strikes"]:
+			for entry: Variant in (doc["weather"] as Dictionary).get(key, []):
+				if typeof(entry) == TYPE_DICTIONARY:
+					var floats := {}
+					for field in (entry as Dictionary):
+						floats[str(field)] = float((entry as Dictionary)[field])
+					weather[key].append(floats)
+		doc["weather"] = weather
+
 	var route: Array = []
 
 	for entry: Variant in doc.get("route", []):

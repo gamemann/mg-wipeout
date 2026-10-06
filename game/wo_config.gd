@@ -113,6 +113,42 @@ extends DotConfig
 ## ground is a shove a player can run out of; one that lifts them is a flight they watch.
 @export_range(0.0, 30.0, 0.5) var knock_lift: float = 5.5
 
+## Health a knock costs on the course, per m/s it threw the player. 0: knocks never hurt.
+##
+## [b]On by default since 2026-10-06[/b], because the brief asked for obstacles that hurt and
+## some that are fatal: at 1.0 a slow arm (8 m/s) costs 8 and the hardest throw (22 m/s) 22.
+## 1.4 was tried first and a stand-in took nine knocks before its first checkpoint, which
+## at 1.4 was out of the round; a checkpoint heals.
+@export_range(0.0, 10.0, 0.05) var knock_damage_per_speed: float = 1.0
+
+## Whether a player whose health runs out on the course is out for the round (watching
+## from the gallery) rather than put back at the last checkpoint. The brief's "fatal".
+@export var course_deaths_eliminate: bool = true
+
+## Whether crossing a checkpoint restores health, so one bad stretch is not a slow death.
+@export var checkpoint_heals: bool = true
+
+# --- Weather ------------------------------------------------------------------
+
+@export_group("Weather")
+
+## Chance, 0 to 1, that a round's course gets gusts of wind.
+@export_range(0.0, 1.0, 0.05) var wind_chance: float = 0.5
+
+## Strongest gust, as a sideways acceleration in m/s². Six is a stagger; twelve is a fall.
+@export_range(0.0, 40.0, 0.5) var wind_strength: float = 7.0
+
+## Chance, 0 to 1, that a round's course gets a thunderstorm: rain, and lightning striking
+## the course at drawn places and moments.
+@export_range(0.0, 1.0, 0.05) var storm_chance: float = 0.25
+
+## How many lightning strikes a storm brings over a course.
+@export_range(0, 60, 1) var storm_strikes: int = 14
+
+## How near a strike knocks a player, in metres, and what it costs them.
+@export_range(0.5, 20.0, 0.5) var strike_radius: float = 3.5
+@export_range(0.0, 400.0, 1.0) var strike_damage: float = 35.0
+
 # --- The courses -----------------------------------------------------------
 
 @export_group("The courses")

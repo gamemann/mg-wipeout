@@ -109,6 +109,14 @@ The game's pack does not contain `courses/` (a link, excluded in dot-server-depl
 - **A drop-tile is red for `WoCourse.TILE_WARN_SECONDS` (0.6 s) before it drops**, computed from the tick like everything else (`tile_warning`), so both ends agree about it. `tools/shot.sh --view=tiles` draws it.
 - **A high arm is ducked**: The Sweeper's last section is a `high_sweeper` whose arms pass above a crouch and below a standing head.
 
+## Knocks hurt, a bad one is fatal, and the weather turns (2026-10-06)
+
+From the brief: obstacles hurt and some are fatal, a death is a body coming apart, and wind or a thunderstorm makes it harder. **On the course a knock costs health** by how hard it threw you (`knock_damage_per_speed`, 1.0: a slow arm 8, the hardest throw 22; 1.4 was tried and a stand-in was out before its first checkpoint), charged on the authority when it notices the knock, since the throw itself is predicted. **Health that runs out on the course is the round over** (`course_deaths_eliminate`): alive again at once and watching from the lounge, and `_course_is_over` counts them as off the course or a round with an elimination would always run its clock. Off, it is a restart from the last checkpoint. **A checkpoint heals** (`checkpoint_heals`).
+
+**Weather is drawn once per round and travels in the course document** (`WoGame.draw_weather` into `doc["weather"]`), so it is Decision 1 and 2 again: gusts (`wind_chance`, `wind_strength`) and lightning strikes at drawn spots on the route and drawn ticks (`storm_chance`, `storm_strikes`, `strike_radius`, `strike_damage`) are pure functions of the tick in `WoCourse.wind` / `strike`, applied in the player's own predicted tick, and nothing more goes on the wire. **The document validator turns every weather number into a float**: JSON has one number type, and an int tick came back as a float and broke `headless_net`'s "the same document, to the byte". `headless_courses` runs with damage and weather off, because what it proves is that a course can be finished.
+
+A death on a client breaks the figure (dot-player-char's `DotPlayerBodyBreak`, newly linked): lightning, a blast or one in three deaths explode it, the rest lose one to three limbs, seeded from the player so every client agrees, and mended 1.2 s later because the player is already alive in the lounge. `WoWeatherView` draws the rain round the camera, a bolt and a flash on each strike's tick, and dims the sun to under half during a storm (the first render had rain out of a bright sky; the sky material's own colours are still bright). `headless_run`'s *on the course a knock hurts...* (5 checks) and *gusts and lightning...* (6).
+
 ## Still to do
 
 In the order they are worth doing.

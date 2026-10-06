@@ -78,6 +78,9 @@ const DIED_SHOT := &"shot"
 const DIED_THROWN := &"thrown"
 const DIED_FELL := &"fell"
 const DIED_BLAST := &"blast"
+## Knocked out on the course by an obstacle, or by lightning.
+const DIED_KNOCKED := &"knocked"
+const DIED_STRUCK := &"struck"
 
 ## Metres within which a player standing over a weapon picks it up.
 const PICKUP_REACH := 1.3
@@ -873,9 +876,66 @@ func _lay_out_course() -> void:
 		StringName(str(course_doc.get("id", "")))
 	)
 
+	# The round's weather, drawn here and sent inside the document, so every machine reads
+	# the same gusts and strikes and nothing more travels per tick.
+	if authoritative and not doc.is_empty():
+		doc = doc.duplicate(true)
+		doc["weather"] = draw_weather(doc, random.stream(&"weather"), _tick)
+
 	build_stage(doc)
 	_place_on_start()
 	_course_unplayed = true
+
+
+## Gusts and lightning for one course, from the round's own stream. Ticks are game ticks
+## from [param start]: the countdown and the whole course clock are covered.
+func draw_weather(doc: Dictionary, rng: DotRandomStream, start: int) -> Dictionary:
+	var out := {"gusts": [], "strikes": []}
+	var rate := float(maxi(tick_rate, 1))
+	var span := (config.countdown_seconds + course_limit_for(doc)) * rate
+
+	if config.wind_strength > 0.0 and rng.next_unit() < config.wind_chance:
+		for i in range(rng.next_range_i(2, 5)):
+			var from := start + int(rng.next_range_f(config.countdown_seconds * rate, span * 0.9))
+			var angle := rng.next_range_f(0.0, TAU)
+			out["gusts"].append({
+				"from": from, "to": from + int(rng.next_range_f(2.0, 6.0) * rate),
+				"dx": cos(angle), "dz": sin(angle),
+				"strength": rng.next_range_f(0.4, 1.0) * config.wind_strength,
+			})
+
+	if config.storm_strikes > 0 and rng.next_unit() < config.storm_chance:
+		var route := _weather_route(doc)
+		for i in range(config.storm_strikes):
+			var spot: Vector3 = route[rng.next_range_i(0, route.size() - 1)] if not route.is_empty() else Vector3.ZERO
+			out["strikes"].append({
+				"tick": start + int(rng.next_range_f(config.countdown_seconds * rate, span * 0.95)),
+				"x": spot.x + rng.next_range_f(-3.0, 3.0), "y": spot.y, "z": spot.z + rng.next_range_f(-3.0, 3.0),
+				"radius": config.strike_radius,
+			})
+
+	return out
+
+
+## Where on a course lightning can land: the start, every checkpoint and the finish.
+func _weather_route(doc: Dictionary) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for key in ["start", "finish"]:
+		var spot: Variant = doc.get(key, {})
+		if typeof(spot) == TYPE_DICTIONARY and (spot as Dictionary).has("at"):
+			out.append(_vec(spot["at"]))
+	for checkpoint in doc.get("checkpoints", []):
+		if typeof(checkpoint) == TYPE_DICTIONARY and (checkpoint as Dictionary).has("at"):
+			out.append(_vec(checkpoint["at"]))
+	return out
+
+
+static func _vec(value: Variant) -> Vector3:
+	if value is Vector3:
+		return value
+	if value is Array and (value as Array).size() >= 3:
+		return Vector3(float(value[0]), float(value[1]), float(value[2]))
+	return Vector3.ZERO
 
 
 ## Builds [param doc] as the stage. What the server does at a round start and a handover,
@@ -967,6 +1027,12 @@ func _advance_phase(delta: float) -> void:
 
 
 ## The course's own clock: the document's, under the server's ceiling.
+## [method course_limit] for a document not yet built, for drawing its weather.
+func course_limit_for(doc: Dictionary) -> float:
+	var asked := float(doc.get("course_seconds", 0.0))
+	return minf(asked, config.course_seconds) if asked > 0.0 else config.course_seconds
+
+
 func course_limit() -> float:
 	var asked := float(course_doc.get("course_seconds", 0.0))
 	return minf(asked, config.course_seconds) if asked > 0.0 else config.course_seconds
@@ -979,7 +1045,10 @@ func _course_is_over() -> bool:
 	# Everybody across. "Nobody left on the course" is the same thing here: there is no way
 	# off a course but the finish, and a leaver is not on it.
 	for id: StringName in players:
-		if not (players[id] as WoPlayer).finished:
+		var player := players[id] as WoPlayer
+		# Knocked out of the round is off the course too, or a round with an elimination in
+		# it always runs its clock out.
+		if not player.finished and not player.watching:
 			return false
 
 	return not players.is_empty()
@@ -1652,6 +1721,20 @@ func _watch_progress() -> void:
 			if progress != null:
 				progress.on_knocked(id)
 
+			# What the knock costs. On the course only, on the authority only: the throw was
+			# predicted, the health is decided.
+			if authoritative and stage.is_course() and phase == Phase.COURSE and combat != null \
+					and player.is_alive() and not player.finished:
+				var amount := player.last_knock_speed * config.knock_damage_per_speed
+				if player.last_knock_struck:
+					amount = maxf(amount, config.strike_damage)
+				if amount > 0.0:
+					var hurt := DotDamage.make(0, player.entity_id, amount, null)
+					hurt.point = feet
+					hurt.tick = _tick
+					hurt.context = {"why": DIED_STRUCK if player.last_knock_struck else DIED_KNOCKED}
+					var _applied := combat.apply_damage(hurt)
+
 		if feet.y < stage.water_height():
 			_fell(player)
 			continue
@@ -1664,6 +1747,8 @@ func _watch_progress() -> void:
 		if crossed > player.checkpoint:
 			player.checkpoint = crossed
 			checkpoint_reached.emit(id, crossed)
+			if config.checkpoint_heals and authoritative and player.health != null:
+				var _healed := player.health.heal(player.health.max_health)
 
 		if stage.in_finish(feet):
 			_finish(player)
@@ -2140,6 +2225,24 @@ func _on_player_died(player: WoPlayer, damage: DotDamage) -> void:
 		match_node.report_kill(String(by), String(player.player_id), why, _tick)
 
 	player_died.emit(player.player_id, by, why)
+
+	# On the course a death is either the round over for them (the brief's "fatal", the
+	# default) or a restart at the last checkpoint. Either way they are alive again at once:
+	# an eliminated player watches from the lounge, untouchable, until the next round.
+	if authoritative and stage != null and stage.is_course() and not player.finished:
+		if player.health != null:
+			player.health.health = config.player_health
+			player.health.alive = true
+		if config.course_deaths_eliminate:
+			player.watching = true
+			if player.health != null:
+				player.health.invulnerable = true
+			var seat := stage.lounge_spot(20 + players.size())
+			player.place_at(seat[0], seat[1])
+		else:
+			var spot := stage.respawn_point(player.checkpoint, player.falls % 5)
+			player.place_at(spot[0], spot[1])
+
 	DotLog.debug(CHANNEL, "player died", {
 		"id": String(player.player_id), "by": String(by), "why": String(why),
 	})

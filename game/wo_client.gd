@@ -8,6 +8,7 @@ const WoEvents := preload("net/wo_events.gd")
 
 const WoConfig := preload("wo_config.gd")
 const WoGame := preload("wo_game.gd")
+const WoWeatherView := preload("wo_weather_view.gd")
 const WoHud := preload("wo_hud.gd")
 const WoPaths := preload("wo_paths.gd")
 const WoPlayer := preload("wo_player.gd")
@@ -58,6 +59,9 @@ const VIEW_KEY := KEY_F5
 var game: WoGame = null
 var player: WoPlayer = null
 var camera: Camera3D = null
+
+## Rain and lightning, drawn. See [WoWeatherView].
+var weather: WoWeatherView = null
 var hud: WoHud = null
 var chat: WoClientChat = null
 
@@ -434,6 +438,10 @@ func _on_death(session_id: int, _by: int, why: StringName) -> void:
 			line = "%s took a crate to the face" % name_of
 		WoGame.DIED_BLAST:
 			line = "%s stood next to a barrel" % name_of
+		WoGame.DIED_KNOCKED:
+			line = "%s was knocked out of the round" % name_of
+		WoGame.DIED_STRUCK:
+			line = "%s was struck by lightning" % name_of
 
 	chat.say_locally(line, Color(0.80, 0.82, 0.86))
 
@@ -549,10 +557,51 @@ func _hear_phase(phase: int) -> void:
 
 
 func _hear_death(who: WoPlayer, why: StringName) -> void:
-	if audio == null or who == null:
+	if who == null:
+		return
+
+	_break(who, why)
+
+	if audio == null:
 		return
 
 	var _heard := audio.on_death(who.global_position, who == player)
+
+
+## The body comes apart, and how depends on what did it: lightning and a hard knock blow it
+## to pieces, anything else takes a limb or two, seeded from who died and how often they
+## have, so every client breaks it the same way. Mended a moment later, because on the
+## course a knocked-out player is alive again at once, watching from the lounge.
+func _break(who: WoPlayer, why: StringName) -> void:
+	if who.figure == null or who == player:
+		return
+
+	var rules := DotPlayerBreakRules.new()
+	rules.criticals_only = false
+	var seed_value := hash(String(who.player_id)) + who.falls * 31 + who.knocks
+	if why == WoGame.DIED_STRUCK or why == WoGame.DIED_BLAST or (seed_value % 3 == 0):
+		rules.mode = DotPlayerBreakRules.Mode.EXPLODE
+	else:
+		rules.mode = DotPlayerBreakRules.Mode.LIMBS
+		rules.limbs = 1 + seed_value % 3
+	rules.lifetime = 2.5
+
+	var before := DotPlayerBodyBreak.visible_meshes(who.figure)
+	var made := DotPlayerBodyBreak.break_apart(
+		who.figure, game, rules, who.global_position, Vector3.UP, seed_value
+	)
+	if made == null:
+		return
+
+	var mend := get_tree().create_timer(1.2)
+	mend.timeout.connect(func() -> void:
+		if not is_instance_valid(who) or who.figure == null:
+			return
+		who.figure.visible = true
+		for mesh in before:
+			if is_instance_valid(mesh):
+				mesh.visible = true
+	)
 
 
 ## Somebody got a weapon. If it was us, the gun comes up in our hands, on its own slot.
@@ -719,6 +768,15 @@ func _build_camera() -> void:
 	camera.current = true
 
 	_place_camera()
+
+	# The weather's look: rain on a stormy course, each strike drawn on its tick.
+	if weather == null and game != null:
+		weather = WoWeatherView.new()
+		weather.name = "Weather"
+		weather.stage = game.stage
+		weather.camera = camera
+		weather.tick_fn = game.current_tick
+		add_child(weather)
 
 
 ## Puts the camera where this view mode wants it, rebuilding the rig if the mode changed.

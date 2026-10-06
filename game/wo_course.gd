@@ -71,6 +71,12 @@ var gate_closed: bool = false:
 ## One per piece, in document order. See [method _make_piece].
 var pieces: Array[Dictionary] = []
 
+## The round's weather, from `doc["weather"]` (drawn by the server and sent with the course,
+## so every machine reads the same gusts and strikes): gusts as {from, to, dir, strength}
+## and strikes as {tick, at, radius}, in game ticks. Empty is a calm course.
+var gusts: Array[Dictionary] = []
+var strikes: Array[Dictionary] = []
+
 ## Collider instance id -> [code][piece index, sub-index][/code], for the carry and the bounce.
 var _by_collider: Dictionary = {}
 
@@ -99,6 +105,8 @@ func build(p_doc: Dictionary) -> DotResult:
 		return checked
 
 	doc = checked.value
+
+	_read_weather()
 
 	for index in range((doc["pieces"] as Array).size()):
 		_make_piece(index, doc["pieces"][index])
@@ -1357,6 +1365,77 @@ func supported(point: Vector3, tick: int) -> bool:
 						return true
 
 	return false
+
+
+# --- Weather -------------------------------------------------------------------
+
+## Reads the weather a server drew into the document. Called by [method build].
+func _read_weather() -> void:
+	gusts.clear()
+	strikes.clear()
+	var weather: Variant = doc.get("weather", {})
+	if typeof(weather) != TYPE_DICTIONARY:
+		return
+	for gust in (weather as Dictionary).get("gusts", []):
+		if typeof(gust) == TYPE_DICTIONARY:
+			gusts.append({
+				"from": int(gust.get("from", 0)), "to": int(gust.get("to", 0)),
+				"dir": Vector2(float(gust.get("dx", 1.0)), float(gust.get("dz", 0.0))).normalized(),
+				"strength": float(gust.get("strength", 0.0)),
+			})
+	for strike in (weather as Dictionary).get("strikes", []):
+		if typeof(strike) == TYPE_DICTIONARY:
+			strikes.append({
+				"tick": int(strike.get("tick", 0)),
+				"at": Vector3(float(strike.get("x", 0.0)), float(strike.get("y", 0.0)), float(strike.get("z", 0.0))),
+				"radius": float(strike.get("radius", 3.0)),
+			})
+
+
+## Whether this course has a storm: what a client draws rain for.
+func is_stormy() -> bool:
+	return not strikes.is_empty()
+
+
+## The wind at [param tick], as a horizontal acceleration in m/s². A pure function of the
+## tick, like every obstacle, so a client predicts a gust exactly as the server pushes it.
+## A gust eases in and out over its first and last second.
+func wind(tick: int) -> Vector3:
+	var out := Vector3.ZERO
+	for gust in gusts:
+		var from: int = gust["from"]
+		var to: int = gust["to"]
+		if tick < from or tick >= to:
+			continue
+		var ease := float(tick_rate)
+		var envelope := minf(1.0, minf(float(tick - from) / ease, float(to - tick) / ease))
+		var dir: Vector2 = gust["dir"]
+		out += Vector3(dir.x, 0.0, dir.y) * float(gust["strength"]) * envelope
+	return out
+
+
+## A strike landing at [param tick] near [param feet]: the throw it gives (outward and up), or
+## zero. Exact to the tick, so the knock is predicted like any other.
+func strike(feet: Vector3, tick: int) -> Vector3:
+	for bolt in strikes:
+		if int(bolt["tick"]) != tick:
+			continue
+		var at: Vector3 = bolt["at"]
+		var away := Vector3(feet.x - at.x, 0.0, feet.z - at.z)
+		var radius: float = bolt["radius"]
+		if away.length() > radius:
+			continue
+		var push := away.normalized() if away.length() > 0.05 else Vector3(1.0, 0.0, 0.0)
+		return push * 9.0 + Vector3(0.0, 8.0, 0.0)
+	return Vector3.ZERO
+
+
+## The strike landing at exactly [param tick], or an empty Dictionary. For drawing it.
+func strike_at(tick: int) -> Dictionary:
+	for bolt in strikes:
+		if int(bolt["tick"]) == tick:
+			return bolt
+	return {}
 
 
 # --- The course's own facts -----------------------------------------------------

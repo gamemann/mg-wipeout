@@ -17,9 +17,9 @@ const WoProgress := preload("../game/wo_progress.gd")
 ## because the section announced itself on the way in. mg-smash-copter and dot-settings both
 ## have the story; every total here was armed by raising it by one and watching the run fail.
 
-const SECTIONS := 17
+const SECTIONS := 19
 
-const CHECKS := 82
+const CHECKS := 93
 
 const TICK_RATE := 64
 const TICK := 1.0 / float(TICK_RATE)
@@ -59,6 +59,8 @@ func _run() -> void:
 	await _test_one_finisher_wins()
 	await _test_the_final_death()
 	await _test_nobody_finishes()
+	await _test_knocks_hurt()
+	await _test_the_weather()
 
 	for world in _worlds.duplicate():
 		await _dispose(world)
@@ -594,6 +596,82 @@ func _test_nobody_finishes() -> void:
 
 
 # --- Helpers ------------------------------------------------------------------------
+
+func _test_knocks_hurt() -> void:
+	_section("on the course a knock hurts, a bad one is fatal, a checkpoint heals")
+	var game := await _world(func(c: WoConfig) -> void:
+		c.wind_chance = 0.0
+		c.storm_chance = 0.0)
+	var victim := game.add_player(&"u1", "Ada")
+	var other := game.add_player(&"u2", "Bo")
+	game.start()
+	await _step(game, int((game.config.countdown_seconds + 0.2) * TICK_RATE))
+
+	var hub: Vector3 = _piece(game, "spinner")["spec"]["at"]
+	victim.place_at(hub + Vector3(2.6, 0.05, 0.0), 0.0)
+	var before := victim.health.health
+	for _i in range(TICK_RATE * 4):
+		await _step(game, 1)
+		if victim.knocks > 0:
+			await _step(game, 1)
+			break
+	var expected := victim.last_knock_speed * game.config.knock_damage_per_speed
+	_check(victim.knocks > 0 and absf((before - victim.health.health) - expected) < 1.0,
+		"a knock costs health by how hard it threw them",
+		"%.1f lost for a %.1f m/s throw" % [before - victim.health.health, victim.last_knock_speed])
+
+	# Low enough that the next knock is fatal: out for the round, alive in the lounge.
+	victim.health.health = 1.0
+	victim.place_at(hub + Vector3(2.6, 0.05, 0.0), 0.0)
+	var knocks := victim.knocks
+	for _i in range(TICK_RATE * 4):
+		await _step(game, 1)
+		if victim.knocks > knocks:
+			await _step(game, 2)
+			break
+	_check(victim.watching and victim.is_alive(), "a fatal knock takes them out of the round, watching")
+	_check(not game._course_is_over() or other.finished, "and the course goes on for the rest")
+
+	other.finished = true
+	_check(game._course_is_over(), "with everybody finished or out, the course is over")
+	other.finished = false
+
+	var checkpoint: Dictionary = game.course_doc["checkpoints"][0]
+	other.health.health = 30.0
+	other.place_at(checkpoint["at"], 0.0)
+	await _step(game, 3)
+	_check(other.health.health >= other.health.max_health - 0.01, "a checkpoint heals (%.0f)" % other.health.health)
+	_finished()
+
+
+func _test_the_weather() -> void:
+	_section("gusts and lightning are drawn once and computed from the tick")
+	var game := await _world(func(c: WoConfig) -> void:
+		c.wind_chance = 1.0
+		c.storm_chance = 1.0)
+	var doc: Dictionary = game.course_doc
+	var once := game.draw_weather(doc, DotRandomStream.new(7, &"weather"), 100)
+	var twice := game.draw_weather(doc, DotRandomStream.new(7, &"weather"), 100)
+	_check(once == twice, "the same stream draws the same weather")
+	_check((once["gusts"] as Array).size() > 0 and (once["strikes"] as Array).size() == game.config.storm_strikes,
+		"wind and storm on: gusts and %d strikes" % game.config.storm_strikes)
+
+	# A known plan: one gust east from tick 200 to 600, one strike at the start at tick 300.
+	var start: Vector3 = doc["start"]["at"]
+	var planned := doc.duplicate(true)
+	planned["weather"] = {
+		"gusts": [{"from": 200, "to": 600, "dx": 1.0, "dz": 0.0, "strength": 10.0}],
+		"strikes": [{"tick": 300, "x": start.x, "y": start.y, "z": start.z, "radius": 3.0}],
+	}
+	var _built := game.build_stage(planned)
+	_check(game.stage.wind(150) == Vector3.ZERO and game.stage.wind(400).x > 9.0,
+		"the wind blows only inside its gust (%.1f at 400)" % game.stage.wind(400).x)
+	_check(game.stage.is_stormy() and not game.stage.strike_at(300).is_empty(), "the course knows its storm")
+	_check(game.stage.strike(start, 300) != Vector3.ZERO and game.stage.strike(start, 301) == Vector3.ZERO,
+		"a strike throws whoever is under it, on its tick only")
+	_check(game.stage.strike(start + Vector3(10.0, 0.0, 0.0), 300) == Vector3.ZERO, "and nobody further away")
+	_finished()
+
 
 func _piece(game: WoGame, kind: String) -> Dictionary:
 	for piece in game.stage.pieces:

@@ -43,7 +43,7 @@ const ROSTER_INTERVAL := 2.0
 ## it from a path inside `load_module`, so there is no instance for a host to set a field on
 ## first. `examples/dedicated.tscn` points it at a directory of its own; before it could,
 ## every run appended the live tools' audit warnings to the real store, 106 of them by the
-## time anybody counted. game-simple-lobby's `RoomModule.punishments_path` is the same seam.
+## time anybody counted.
 static var punishments_file: String = ""
 
 ## The `wo_bots` cvar, held so the tick does not look it up sixty times a second.

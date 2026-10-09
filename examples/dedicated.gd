@@ -13,8 +13,8 @@ const WoPlayer := preload("../game/wo_player.gd")
 ## [DotGameModule]'s order runs, a cvar is typed at a console and a round is played by
 ## nothing but the stand-ins the module seats itself.
 
-const SECTIONS := 6
-const CHECKS := 23
+const SECTIONS := 7
+const CHECKS := 26
 
 const SERVER_DIR := "user://wo_dedicated"
 const PORT := 28931
@@ -49,6 +49,7 @@ func _run() -> void:
 		await _test_the_module_loads()
 		_test_the_commands()
 		await _test_a_round_runs()
+		await _test_a_reload_keeps_delivered_courses()
 		await _test_it_unloads_cleanly()
 
 	_test_no_message_preloads_itself()
@@ -223,6 +224,57 @@ func _test_a_round_runs() -> void:
 	_check(not rounds.is_empty(), "and a round was decided", str(rounds))
 	_check(not rounds.is_empty() and str(rounds[0][2]) != "", "with a sentence saying why", str(rounds))
 	_check(_said(_run_command("wo_status"), "round"), "and wo_status still answers")
+	_finished()
+
+
+## A reload keeps the courses the server names. `wo_reload` reads the course directory again with
+## `load_from`, which forgets everything read before, and in two of the three games built this
+## way it stopped there: every delivered course was gone until a restart, with nothing logged.
+## A pack "mounted" on the disk and a descriptor naming it stand in for dot-cloud and the
+## deployment's map config (dot-server-deploy's cfg/content.yml), which a suite has neither of.
+func _test_a_reload_keeps_delivered_courses() -> void:
+	_section("a reload keeps the courses the server names")
+	var key := "dot-test/wo-delivered@1.0.0"
+	var mount := DotGameContent.mount_of(key)
+	var dir := mount.path_join("courses")
+	var id := &"wo_delivered_check"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var doc: Dictionary = game.catalogue.practice()
+	doc["id"] = String(id)
+	var file := FileAccess.open(dir.path_join("delivered_check.json"), FileAccess.WRITE)
+	# Plain, the way a document on the disk is: the built-in one holds Vector3s, which JSON
+	# writes as strings the reader refuses.
+	file.store_string(JSON.stringify(load("res://game/wo_course_doc.gd").call("_to_plain", doc)))
+	file.close()
+
+	# The manager's running descriptor, named the way a deployment names it. Restored below:
+	# `_current` is the manager's own, and nothing else in this suite should see the pack.
+	var manager: Object = server.games
+	var was: Variant = manager.get("_current")
+	var named := DotGameDescriptor.new()
+	named.maps = PackedStringArray([key])
+	manager.set("_current", named)
+
+	var _first := _run_command("wo_reload")
+	for _i in range(3):
+		await get_tree().process_frame
+	_check(game.catalogue.courses.has(id), "a course the server names is in the catalogue after wo_reload",
+		str(game.catalogue.courses.keys()))
+	_check(game.catalogue.courses.has(&"wo_practice"),
+		"beside the built-in one")
+
+	manager.set("_current", was)
+	var _second := _run_command("wo_reload")
+	for _i in range(3):
+		await get_tree().process_frame
+	_check(not game.catalogue.courses.has(id), "and it came from the server's list: unnamed, a reload drops it")
+
+	DirAccess.remove_absolute(dir.path_join("delivered_check.json"))
+	var path := dir
+	while path != "res://dot_cloud":
+		DirAccess.remove_absolute(path)
+		path = path.get_base_dir()
+	DirAccess.remove_absolute("res://dot_cloud")
 	_finished()
 
 

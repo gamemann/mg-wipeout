@@ -18,9 +18,9 @@ const WoProgress := preload("../game/wo_progress.gd")
 ## because the section announced itself on the way in. mg-smash-copter and dot-settings both
 ## have the story; every total here was armed by raising it by one and watching the run fail.
 
-const SECTIONS := 21
+const SECTIONS := 22
 
-const CHECKS := 101
+const CHECKS := 103
 
 const TICK_RATE := 64
 const TICK := 1.0 / float(TICK_RATE)
@@ -64,6 +64,7 @@ func _run() -> void:
 	await _test_the_weather()
 	await _test_the_machinery_is_heard()
 	await _test_the_client_settings()
+	await _test_a_carrier_is_drawn_carrying()
 
 	for world in _worlds.duplicate():
 		await _dispose(world)
@@ -826,6 +827,30 @@ func _test_the_client_settings() -> void:
 	remove_child(client)
 	client.free()
 	await get_tree().process_frame
+	_finished()
+
+
+## A watched player carrying a prop is drawn with both arms out under it, as the kit's
+## `holding-both` clip holds them; with the arms down the prop read as a crate following
+## somebody about. A mirrored player (no gravity gun here) is told by the snapshot's bit.
+func _test_a_carrier_is_drawn_carrying() -> void:
+	_section("a carrier is drawn carrying")
+	var game := await _world()
+	var carrier := game.add_player(&"u1", "Ada")
+	carrier.carrying = true
+	var _shown := carrier.present_body(false, carrier.global_position, Color.WHITE)
+	var left: Node3D = carrier.figure.find_child("arm-left", true, false) if carrier.figure != null else null
+	_check(
+		carrier.figure != null and carrier.figure.carrying and left != null
+			and is_equal_approx(left.rotation.x, -PI * 0.5),
+		"both arms are out under the prop",
+		str(carrier.figure.describe()) if carrier.figure != null else "no figure"
+	)
+	carrier.carrying = false
+	_shown = carrier.present_body(false, carrier.global_position, Color.WHITE)
+	_check(carrier.figure != null and not carrier.figure.carrying and left != null
+			and not is_equal_approx(left.rotation.x, -PI * 0.5),
+		"and down again when it is let go")
 	_finished()
 
 

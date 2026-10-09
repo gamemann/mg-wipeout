@@ -56,6 +56,10 @@ var weapons: ZeeWeaponRig = null
 ## What they are carrying in the final death, if anything. See [WoGame._advance_grabs].
 var grab: DotGravGun = null
 
+## Whether a watcher sees them carrying a prop: written from the snapshot on a mirror
+## (`WoPlayerNet.net_carrying`); a player this process simulates is asked of [member grab].
+var carrying: bool = false
+
 ## The course (or the arena) they are on. Set by [WoGame]; read inside the tick.
 var stage: WoCourse = null
 
@@ -506,6 +510,16 @@ func _present_held() -> void:
 	mirror_fired = 0
 	figure.hold(id, switching)
 	figure.fired(fired, kind)
+	figure.carrying = is_carrying()
+
+
+## Whether they are carrying a prop, wherever that is known: the gravity gun where this
+## process runs it, the snapshot's bit where it only mirrors them.
+func is_carrying() -> bool:
+	if grab != null:
+		return grab.is_carrying()
+
+	return carrying
 
 
 ## Which of [param ids] is in [param slot], or nothing. The first dealt wins a shared slot,

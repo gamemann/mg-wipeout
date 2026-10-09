@@ -78,6 +78,11 @@ var held: ZeeWorldModel = null
 var _model: Node3D = null
 var _anim: AnimationPlayer = null
 var _arm: Node3D = null
+var _left_arm: Node3D = null
+
+## Whether this figure is drawn carrying something in both hands: a prop on the gravity gun.
+## Read by the suite.
+var carrying: bool = false
 var _hand: Node3D = null
 var _scale_by: float = 1.0
 var _posed_at_usec: int = -1
@@ -98,6 +103,7 @@ func build(height: float, atlas_path: String, colour: Color) -> void:
 	clip = &""
 	_anim = null
 	_arm = null
+	_left_arm = null
 	# The hand and the gun in it hung off the old model and go with it; [method hold] builds
 	# them again on the next frame, from [member holding], which outlives a rebuild.
 	_hand = null
@@ -138,6 +144,7 @@ func build(height: float, atlas_path: String, colour: Color) -> void:
 	_paint(_model, atlas_path, colour)
 	_scale_by = scale_by
 	_arm = _model.find_child("arm-right", true, false) as Node3D
+	_left_arm = _model.find_child("arm-left", true, false) as Node3D
 	_anim = _model.find_child("AnimationPlayer", true, false) as AnimationPlayer
 
 	# [b]Advanced by [method pose], not by the engine[/b], so that the arm can be held up
@@ -174,8 +181,14 @@ func pose(at: Vector3, yaw_radians: float, speed: float) -> void:
 
 	# The kit's own `holding-right` pose, over whatever the legs are doing: one rotation of
 	# the arm about its shoulder, measured off the clip (-90 degrees about X).
-	if _arm != null and holding != &"":
+	if _arm != null and (holding != &"" or carrying):
 		_arm.rotation = HOLD_ARM
+
+	# [b]Both arms out for a carried prop[/b] — the kit's `holding-both` is that rotation on
+	# each arm. The prop itself hangs in front of the carrier wherever the gravity gun holds
+	# it; with the arms at their sides it read as a crate following somebody about.
+	if _left_arm != null and carrying:
+		_left_arm.rotation = HOLD_ARM
 
 
 ## Draws [param id] in the right hand, or nothing for an empty id. [param switching] hides
@@ -386,5 +399,6 @@ func describe() -> Dictionary:
 		"visible": visible,
 		"clip": String(clip),
 		"holding": String(holding),
+		"carrying": carrying,
 		"at": str(global_position.snapped(Vector3.ONE * 0.01)) if is_inside_tree() else "-",
 	}

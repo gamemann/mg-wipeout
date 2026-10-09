@@ -58,6 +58,10 @@ var net_ping: int = 0
 ## In the gallery, watching a final death they did not reach.
 var net_watching: bool = false
 
+## Carrying a prop on the gravity gun, which only the server runs. One bit, so a watcher
+## draws both arms out under the prop instead of a crate following somebody about.
+var net_carrying: bool = false
+
 # --- The weapons, which only exist in the second half of a round ------------
 #
 # [b]Seven fields, and the pack's own `all_specs()` names all of them.[/b] GDScript has no
@@ -130,6 +134,7 @@ func _register_net_vars() -> void:
 	replicate(&"net_points", DotNetVar.Type.UINT).bits(16)
 	replicate(&"net_ping", DotNetVar.Type.UINT).bits(10)
 	replicate(&"net_watching", DotNetVar.Type.BOOL)
+	replicate(&"net_carrying", DotNetVar.Type.BOOL)
 
 	for spec in ZeeWeaponNet.all_specs():
 		var declaration := replicate(spec["property"], DotNetVar.Type[spec["type"]])
@@ -212,6 +217,7 @@ func pull() -> void:
 	net_points = clampi(player.points, 0, 65535)
 	net_ping = clampi(player.ping_ms, 0, 1023)
 	net_watching = player.watching
+	net_carrying = player.grab != null and player.grab.is_carrying()
 	net_blind = player.blinded
 	net_beacon = player.beacon
 	net_warp = player.warps & 0xF
@@ -300,6 +306,7 @@ func _adopt() -> void:
 	player.points = net_points
 	player.ping_ms = net_ping
 	player.watching = net_watching
+	player.carrying = net_carrying
 
 	player.blinded = net_blind
 	player.beacon = net_beacon

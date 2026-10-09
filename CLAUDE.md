@@ -30,7 +30,7 @@ game/
   wo_services.gd     chat, voice and moderation over dot-game's base (respawn = last checkpoint)
   net/               the codec (STAGE, PROGRESS, PICKUP…), the link, two behaviours, the bridge
 courses -> ../mg-wipeout-maps/courses   (a dot-bootstrap link; .gitignore says so)
-examples/            headless_run (101), headless_courses (every course), headless_net (46), dedicated (23)
+examples/            headless_run (103), headless_courses (every course), headless_net (46), dedicated (23)
 tools/               shot.sh/.gd — render a view; trace_course — where a stand-in falls and why
 ```
 
@@ -76,7 +76,7 @@ They run the document's route (`route` in mg-wipeout-maps). The flags are the wh
 godot --headless --path . --import
 find . -name '*.gd' -not -path './.godot/*' -not -path './addons/*' | while read f; do
     godot --headless --path . --check-only --script "res://${f#./}"; done
-godot --headless --path . res://examples/headless_run.tscn       # 101 checks
+godot --headless --path . res://examples/headless_run.tscn       # 103 checks
 godot --headless --path . res://examples/headless_courses.tscn   # every course run by a stand-in, every arena stood in
 godot --headless --path . res://examples/headless_net.tscn       # 10 sections, 46 checks
 godot --headless --path . res://examples/dedicated.tscn          # 6 sections, 23 checks
@@ -129,6 +129,10 @@ A death on a client breaks the figure (dot-player-char's `DotPlayerBodyBreak`, n
 
 mg-smash-copter's watcher figures, ported as they are (`WoFigure` is that file renamed): a `ZeeWorldModel` at the end of the kit's own `arm-right`, held up over the walk cycle; read off the rig for a simulated player, and off the snapshot's slot among the weapons the server announced (`WoPlayer.dealt`, noted by the bridge per `ARMED`) for a mirrored one. `headless_net`'s final-death section arms the client's player with a pistol and checks a watcher draws it there (46 checks). The pickup-armed case was also hit by dot-weapon's endless switch (fixed there, 4d543f7): a second pickup in another slot holstered for ever.
 
+## A carrier is drawn carrying (2026-10-08)
+
+The gravity gun runs on the server alone, so a watcher had no way to know somebody was carrying, and a prop floated in front of a figure with its arms at its sides. `WoPlayerNet.net_carrying` is one bit (the server reads `grab.is_carrying()`); `WoPlayer.is_carrying()` asks the gun where this process runs it and the bit where it only mirrors; `WoFigure` raises both arms as the kit's `holding-both` holds them (-90 degrees about X on each, measured off the clip). `headless_run`'s "a carrier is drawn carrying" (armed: without the left arm's line it fails). Not rendered: staging a stand-in mid-carry in the shot tool is its own job.
+
 ## Two things a render found (2026-10-08)
 
 - **The course was introduced twice at every boot**: the warmup lays round one's course and `start()` builds it again (Decision 2), and both rebuilds shouted the name and wrote the blurb into the chat. `WoClient._on_stage` introduces a stage once per five seconds.
@@ -143,5 +147,4 @@ mg-smash-copter's watcher figures, ported as they are (`WoFigure` is that file r
 In the order they are worth doing.
 
 1. **Put it live.** Create `gamemann/mg-wipeout` and `gamemann/mg-wipeout-maps` on GitHub, push, tag both (maps first: the game's `server_dependencies` is pinned at install), and add `gamemann/mg-wipeout` to a server's `TMC_GAMES` (a published game is `<owner>/<name>`; the bare `wipeout` is only dot-server-deploy's local `content/wipeout/`, which `examples/wipeout_client` tests against). Not done here because publishing and pushing are the owner's call.
-2. **A figure holding a carried prop.** The gravity gun's prop floats in front of a watched player with their arms at their sides.
-3. **Course levels for the nightly quota** — see mg-wipeout-maps' CLAUDE.md for what a level is here.
+2. **Course levels for the nightly quota** — see mg-wipeout-maps' CLAUDE.md for what a level is here.

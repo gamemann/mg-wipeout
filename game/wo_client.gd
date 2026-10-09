@@ -513,17 +513,23 @@ func _build_settings() -> void:
 	if audio != null:
 		settings.bind_audio(audio.manager)
 
-	if settings.stack != null:
+	if settings.menu != null:
 		# [b]Walking is off while the menu is up, as it is while typing.[/b] The sampler
 		# polls the keyboard, and a player dragging a volume slider with the arrow keys
 		# would otherwise walk off whatever they had stopped on.
-		settings.stack.menu_state_changed.connect(func(any_open: bool) -> void:
+		settings.menu_state_changed.connect(func(any_open: bool) -> void:
 			_suspend_input(any_open or (chat != null and chat.is_typing()))
-			# Back into the game on desktop. A browser needs the click that follows, which
-			# `_unhandled_input` already turns into a capture.
-			if not any_open and not DotPlatform.is_web():
+			# The menu takes Escape itself now, so the pointer is freed here rather than
+			# by the key. Back into the game on desktop on close; a browser needs the
+			# click that follows, which `_unhandled_input` already turns into a capture.
+			if any_open:
+				_release()
+			elif not DotPlatform.is_web():
 				_capture()
 		)
+		# Typing a line is the chat box's keyboard: Escape there closes the line, not
+		# opens the menu.
+		settings.menu.busy = func() -> bool: return chat != null and chat.is_typing()
 
 
 func _build_audio() -> void:

@@ -444,7 +444,9 @@ func _hear_pendulum(spec: Dictionary, before: float, now: float, listener: Vecto
 	if bottom.distance_to(listener) > MACHINE_EARSHOT:
 		return 0
 
-	if signf(WoCourse.pendulum_angle(spec, before)) == signf(WoCourse.pendulum_angle(spec, now)):
+	# A bool side, not `signf`, for the spinner's reason: a frame landing exactly on the
+	# bottom (angle 0) made two crossings out of one, into 0 and out of it.
+	if (WoCourse.pendulum_angle(spec, before) >= 0.0) == (WoCourse.pendulum_angle(spec, now) >= 0.0):
 		return 0
 
 	return 1 if _at(MACHINE_WHOOSH, bottom) else 0

@@ -20,7 +20,7 @@ const WoProgress := preload("../game/wo_progress.gd")
 
 const SECTIONS := 22
 
-const CHECKS := 105
+const CHECKS := 106
 
 const TICK_RATE := 64
 const TICK := 1.0 / float(TICK_RATE)
@@ -775,6 +775,18 @@ func _test_the_machinery_is_heard() -> void:
 		audio.queue_free()
 
 	_check(jumped == 0, "and a jump in time plays nothing", "%d" % jumped)
+
+	# A frame landing exactly on the bottom of a hammer's swing (angle 0, phase 0 at t = 0)
+	# is one crossing, not two: into 0 and out of it. Armed by putting `signf` back.
+	var hammer := {"pivot": Vector3(0.0, 5.0, 0.0), "length": 4.0, "swing": 40.0, "period": 2.0, "phase": 0.0}
+	var ears := Vector3(0.0, 1.0, 2.0)
+	var bottom_audio := WoAudio.new()
+	add_child(bottom_audio)
+	var _set := bottom_audio.setup()
+	bottom_audio.listen_from(ears)
+	var through := bottom_audio._hear_pendulum(hammer, -0.02, 0.0, ears) + bottom_audio._hear_pendulum(hammer, 0.0, 0.02, ears)
+	bottom_audio.queue_free()
+	_check(through == 1, "and a frame exactly at the bottom of a swing whooshes once", "%d" % through)
 	_finished()
 
 

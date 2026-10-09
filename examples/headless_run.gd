@@ -723,8 +723,9 @@ func _high_arm_course() -> Dictionary:
 ## one machine, twelve seconds of frames, and what dot-audio's null sink recorded.
 func _test_the_machinery_is_heard() -> void:
 	_section("the machinery is heard, from the course and nothing else")
-	var catalogue := WoCatalogue.new()
-	var _loaded := catalogue.load_from("courses")
+	# One machine of each kind, copied from the course it was measured on, in the built-in
+	# practice course: the courses are mg-wipeout-maps, which CI does not link, and a test
+	# that read them heard nothing there and failed five checks.
 	var cases := [
 		["wo_spin_cycle", "spinner", WoAudio.MACHINE_WHOOSH, "an arm sweeping past"],
 		["wo_hammer_gauntlet", "pendulum", WoAudio.MACHINE_WHOOSH, "a hammer through the bottom of its swing"],
@@ -733,7 +734,7 @@ func _test_the_machinery_is_heard() -> void:
 	]
 
 	for case: Array in cases:
-		var doc: Dictionary = catalogue.courses.get(StringName(case[0]), {})
+		var doc := _machine_course(str(case[1]))
 		var heard := 0
 
 		if not doc.is_empty():
@@ -756,7 +757,7 @@ func _test_the_machinery_is_heard() -> void:
 		_check(heard > 0, "%s is heard (%s)" % [case[3], case[0]], "%d" % heard)
 
 	# A jump in time is not a sweep: a new stage's first frame plays nothing.
-	var doc: Dictionary = catalogue.courses.get(&"wo_spin_cycle", {})
+	var doc := _machine_course("spinner")
 	var jumped := -1
 
 	if not doc.is_empty():
@@ -788,6 +789,31 @@ func _test_the_machinery_is_heard() -> void:
 	bottom_audio.queue_free()
 	_check(through == 1, "and a frame exactly at the bottom of a swing whooshes once", "%d" % through)
 	_finished()
+
+
+## The practice course with its own [param kind] pieces swapped for one copied from the
+## course each sound was measured on (`wo_spin_cycle`, `wo_hammer_gauntlet`,
+## `wo_punch_alley`, `wo_trapdoor_run`), so the timings in the checks above still hold.
+static func _machine_course(kind: String) -> Dictionary:
+	var machines := {
+		"spinner": {"kind": "spinner", "at": [0.0, 0.0, -34.3], "arm_length": 5.2, "arm_height": 0.6,
+			"arm_thickness": 0.35, "speed": 65, "arms": 2, "phase": 0.0, "hub_radius": 0.6},
+		"pendulum": {"kind": "pendulum", "pivot": [0.0, 6.2, -16.2], "length": 5.0, "radius": 0.95,
+			"swing": 55.0, "period": 3.0, "phase": 0.0, "yaw": 0.0},
+		"pusher": {"kind": "pusher", "at": [2.2, 0.9, -16.5], "size": [1.6, 1.6, 1.4], "yaw": 90.0,
+			"reach": 2.4, "period": 2.6, "duty": 0.35, "phase": 0.0},
+		"tiles": {"kind": "tiles", "at": [0.0, -0.25, -17.65], "cols": 3, "rows": 4, "tile": 2.0,
+			"gap": 0.3, "thickness": 0.5, "period": 3.4, "down": 0.25, "seed": 3},
+	}
+	var doc := WoCatalogue.practice().duplicate(true)
+	doc["id"] = "wo_test_%s" % kind
+	var pieces: Array = []
+	for piece: Dictionary in doc["pieces"]:
+		if str(piece.get("kind", "")) != kind:
+			pieces.append(piece)
+	pieces.append((machines[kind] as Dictionary).duplicate(true))
+	doc["pieces"] = pieces
+	return doc
 
 
 ## A point a listener stands at, a little way off the first piece of [param kind].

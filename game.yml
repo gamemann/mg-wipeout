@@ -36,3 +36,9 @@ cvars:
   wo_teams: "0"
   wo_bots: "1"
   wo_min_players: "3"
+
+# This game's maps are small documents the server sends each client, so a host fetches the
+# map packs its server owner names BEFORE the game loads (into the server-only packs)
+# rather than on a map change: nobody is admitted to a server playing only the built-in map.
+metadata:
+  maps_delivery: server

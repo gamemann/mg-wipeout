@@ -1,5 +1,6 @@
 extends Node
 
+const WoCourse := preload("wo_course.gd")
 const WoPaths := preload("wo_paths.gd")
 
 ## What this game makes a noise about, and the noise, on the client.
@@ -64,6 +65,13 @@ const WEAPON_THROW := &"weapon_throw"
 const UI_CLICK := &"ui_click"
 const UI_DENY := &"ui_deny"
 
+## The course's machinery: an arm or a hammer going past, a ram at full reach, a tile about to
+## drop. Synthesised here (see "The machinery") and derived on the client from the course
+## itself (see [method present_machinery]); nothing about them is sent.
+const MACHINE_WHOOSH := &"machine_whoosh"
+const MACHINE_RAM := &"machine_ram"
+const MACHINE_TILE := &"machine_tile"
+
 var manager: DotAudioManager = null
 
 
@@ -74,6 +82,7 @@ static func ids() -> Array[StringName]:
 		FINALE_TELEPORT, FINALE_GO, PICKUP, PROP_THROWN,
 		WEAPON_SHOT, WEAPON_SWING, WEAPON_LAUNCH, WEAPON_BEAM, WEAPON_THROW,
 		UI_CLICK, UI_DENY,
+		MACHINE_WHOOSH, MACHINE_RAM, MACHINE_TILE,
 	]
 
 
@@ -120,6 +129,13 @@ static func sound_catalogue() -> DotAudioCatalogue:
 	var throw := _placed(WEAPON_THROW, 40.0, 8.0, 2, 55, 0.95, 1.05)
 	throw.tags = [&"weapon"]
 	c.add(throw)
+
+	# Short reach and a low priority: a course has a dozen machines going at once and only
+	# the ones next to you are worth a voice. The whoosh's concurrency is the one that
+	# matters — a four-armed spinner beside a pair of hammers is six passes a second.
+	c.add(_placed(MACHINE_WHOOSH, 22.0, 5.0, 4, 45, 0.9, 1.12))
+	c.add(_placed(MACHINE_RAM, 35.0, 7.0, 3, 50, 0.92, 1.08))
+	c.add(_placed(MACHINE_TILE, 18.0, 4.0, 3, 48, 0.95, 1.05))
 
 	var click := _flat(UI_CLICK, &"UI", 2, 60)
 	click.cooldown_ms = 60
@@ -234,6 +250,7 @@ func setup() -> DotResult:
 
 	if godot_sink != null:
 		godot_sink.bank = DotAudioSynth.bank(manager.catalogue, sound_recipes())
+		_bake_machinery(godot_sink.bank, manager.catalogue)
 		# INFO, once: the answer to "why does it sound like that" is in this line.
 		DotLog.info(CHANNEL, "no audio files; synthesised stand-ins are in use", {
 			"ids": sound_recipes().size(), "dir": SOUND_DIR,
@@ -322,6 +339,243 @@ func _at(id: StringName, at: Vector3, volume: float = 1.0) -> bool:
 
 func _flat_play(id: StringName) -> bool:
 	return manager != null and manager.play(id) != 0
+
+
+# --- The machinery, heard -----------------------------------------------------
+#
+# [b]Derived once a frame from the course, and never sent[/b] — Decision 1 again. Where an arm
+# is at any moment is a formula the client already evaluates to draw it, so "an arm just went
+# past you" is that formula at this frame's time against the last frame's. The mg-smash-copter
+# creak is the same idea. Only the machines near the ears are asked anything: the catalogue's
+# reach would cull the rest anyway, and a course is a hundred metres of them.
+
+## How near the ears a machine has to be for this frame to ask it anything, in metres.
+const MACHINE_EARSHOT := 30.0
+
+## How far outside an arm's own length it is still heard sweeping past, in metres.
+const WHOOSH_REACH := 7.0
+
+## The course time [method present_machinery] last looked at, or a negative before the first.
+var _machine_seconds: float = -1.0
+
+
+## Plays what the course's machines did between the last frame and [param seconds], heard
+## from [param listener]. Returns how many sounds it started. [param course] is a `WoCourse`.
+##
+## [b]A jump in time is not a sweep[/b]: a new stage, a reconnect or a paused frame skips more
+## than [code]0.25[/code] s, and every arm on the course would otherwise be heard passing at
+## once. The first frame after one only remembers the time.
+func present_machinery(course: Node, seconds: float, listener: Vector3) -> int:
+	var before := _machine_seconds
+	_machine_seconds = seconds
+
+	if course == null or manager == null or before < 0.0 or seconds <= before or seconds - before > 0.25:
+		return 0
+
+	var started := 0
+	var pieces: Array = course.get(&"pieces")
+
+	for piece: Dictionary in pieces:
+		var spec: Dictionary = piece.get("spec", {})
+
+		match str(piece.get("kind", "")):
+			"spinner":
+				started += _hear_spinner(piece, spec, before, seconds, listener)
+			"pendulum":
+				started += _hear_pendulum(spec, before, seconds, listener)
+			"pusher":
+				started += _hear_pusher(spec, before, seconds, listener)
+			"tiles":
+				started += _hear_tiles(piece, spec, before, seconds, listener)
+
+	return started
+
+
+## Forgets the last frame's time, so the next one is a first frame. For a new stage.
+func reset_machinery() -> void:
+	_machine_seconds = -1.0
+
+
+## An arm crossing the listener's bearing from the hub, on the side the listener is.
+func _hear_spinner(piece: Dictionary, spec: Dictionary, before: float, now: float, listener: Vector3) -> int:
+	var root: Node3D = piece.get("node")
+	if root == null:
+		return 0
+
+	var length := float(spec["arm_length"])
+	var hub := root.transform * Vector3(0.0, float(spec.get("arm_height", 1.0)), 0.0)
+	var to := listener - hub
+	to.y = 0.0
+
+	if to.length() > length + WHOOSH_REACH or to.length() < 0.01:
+		return 0
+
+	var count := maxi(int(spec.get("arms", 1)), 1)
+	var started := 0
+
+	for arm in range(count):
+		var offset := TAU * float(arm) / float(count)
+		var was := _arm_direction(root, spec, before, offset)
+		var is_now := _arm_direction(root, spec, now, offset)
+
+		# Which side of the bearing, as a bool and not `signf`: an arm exactly on the bearing
+		# is a zero, and `signf(0)` differs from both signs, so a frame starting there was a
+		# pass that had not happened.
+		if (was.cross(to).y > 0.0) != (is_now.cross(to).y > 0.0) and is_now.dot(to) > 0.0:
+			var at := hub + to.normalized() * minf(to.length(), length)
+			if _at(MACHINE_WHOOSH, at):
+				started += 1
+
+	return started
+
+
+static func _arm_direction(root: Node3D, spec: Dictionary, t: float, offset: float) -> Vector3:
+	var heading := Basis(Vector3.UP, WoCourse.spinner_angle(spec, t) + offset) * Vector3.RIGHT
+	var out := root.transform.basis * heading
+	out.y = 0.0
+	return out.normalized()
+
+
+## A hammer through the bottom of its swing, which is where it is fastest and lowest.
+func _hear_pendulum(spec: Dictionary, before: float, now: float, listener: Vector3) -> int:
+	var frame := Transform3D(Basis(Vector3.UP, deg_to_rad(float(spec.get("yaw", 0.0)))), spec["pivot"])
+	var bottom := frame * Vector3(0.0, -float(spec["length"]), 0.0)
+
+	if bottom.distance_to(listener) > MACHINE_EARSHOT:
+		return 0
+
+	if signf(WoCourse.pendulum_angle(spec, before)) == signf(WoCourse.pendulum_angle(spec, now)):
+		return 0
+
+	return 1 if _at(MACHINE_WHOOSH, bottom) else 0
+
+
+## A ram arriving at full reach: the moment it would hit somebody, and the one to hear coming.
+func _hear_pusher(spec: Dictionary, before: float, now: float, listener: Vector3) -> int:
+	if WoCourse.pusher_extension(spec, before) >= 0.999 or WoCourse.pusher_extension(spec, now) < 0.999:
+		return 0
+
+	var at := WoCourse.pusher_transform(spec, now).origin
+
+	if at.distance_to(listener) > MACHINE_EARSHOT:
+		return 0
+
+	return 1 if _at(MACHINE_RAM, at) else 0
+
+
+## A tile starting its warning: the rattle that goes with the red, from that tile.
+func _hear_tiles(piece: Dictionary, spec: Dictionary, before: float, now: float, listener: Vector3) -> int:
+	var root: Node3D = piece.get("node")
+	if root == null or root.global_position.distance_to(listener) > MACHINE_EARSHOT + 10.0:
+		return 0
+
+	var started := 0
+	var index := 0
+
+	for child in root.get_children():
+		var tile := child as Node3D
+		if tile == null:
+			continue
+
+		if WoCourse.tile_warning(spec, index, before) <= 0.0 and WoCourse.tile_warning(spec, index, now) > 0.0:
+			var at := root.transform * (tile.get_meta(&"rest", Vector3.ZERO) as Vector3)
+			if at.distance_to(listener) <= MACHINE_EARSHOT and _at(MACHINE_TILE, at):
+				started += 1
+
+		index += 1
+
+	return started
+
+
+# --- The machinery, synthesised -----------------------------------------------
+#
+# dot-audio's voices are one swept tone with noise; a hammer going past is air moving, which
+# is filtered noise rising and falling, so these are baked here into the same bank under the
+# id and the path a real file would have (mg-deathrun's way). A real `.ogg` still wins.
+
+const RATE := 22050
+
+
+static func _bake_machinery(bank: Dictionary, catalogue: DotAudioCatalogue) -> void:
+	var made := {MACHINE_WHOOSH: _whoosh(), MACHINE_RAM: _ram(), MACHINE_TILE: _rattle()}
+
+	for id: StringName in made:
+		bank[id] = made[id]
+		var def := catalogue.find(id)
+
+		if def != null and not def.path.is_empty():
+			bank[def.path] = made[id]
+
+
+static func _wav(samples: PackedFloat32Array) -> AudioStreamWAV:
+	var data := PackedByteArray()
+	data.resize(samples.size() * 2)
+
+	for i in samples.size():
+		data.encode_s16(i * 2, int(clampf(samples[i], -1.0, 1.0) * 32767.0))
+
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = RATE
+	wav.data = data
+	return wav
+
+
+static func _buffer(seconds: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(int(RATE * seconds))
+	return out
+
+
+## Something big going past: noise through a low-pass that opens and closes, swelling to the
+## middle. The filter's opening is the pass; without it, it is a hiss.
+static func _whoosh() -> AudioStreamWAV:
+	var out := _buffer(0.55)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31
+	var low := 0.0
+
+	for i in out.size():
+		var t := float(i) / RATE
+		var u := t / 0.55
+		var swell := sin(PI * u)
+		low = lerpf(low, rng.randf_range(-1.0, 1.0), lerpf(0.04, 0.22, swell))
+		out[i] = low * 2.2 * swell * swell
+
+	return _wav(out)
+
+
+## A ram arriving: a padded thump and the clack of it reaching its stop.
+static func _ram() -> AudioStreamWAV:
+	var out := _buffer(0.45)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 32
+
+	for i in out.size():
+		var t := float(i) / RATE
+		var thump := sin(TAU * lerpf(95.0, 55.0, minf(t / 0.2, 1.0)) * t) * exp(-t * 11.0) * 0.85
+		var clack := rng.randf_range(-1.0, 1.0) * exp(-t * 70.0) * 0.35
+		out[i] = thump + clack
+
+	return _wav(out)
+
+
+## A tile working loose: a dry rattle at 18 Hz for as long as the red warning lasts.
+static func _rattle() -> AudioStreamWAV:
+	var seconds := 0.6
+	var out := _buffer(seconds)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 33
+	var mid := 0.0
+
+	for i in out.size():
+		var t := float(i) / RATE
+		mid = lerpf(mid, rng.randf_range(-1.0, 1.0), 0.45)
+		var chatter := maxf(0.0, sin(TAU * 18.0 * t)) ** 3.0
+		var swell := minf(t / 0.08, 1.0) * clampf((seconds - t) / 0.12, 0.0, 1.0)
+		out[i] = mid * 0.8 * chatter * swell
+
+	return _wav(out)
 
 
 func describe() -> Dictionary:

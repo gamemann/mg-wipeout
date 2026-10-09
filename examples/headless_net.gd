@@ -23,7 +23,7 @@ const WoPlayer := preload("../game/wo_player.gd")
 ## Sections and checks are both counted; mg-smash-copter's notes say why the second matters.
 
 const SECTIONS := 10
-const CHECKS := 45
+const CHECKS := 46
 
 const CLIENT_PEER := 7
 const SESSION := 42
@@ -392,6 +392,26 @@ func _test_the_final_death_crosses() -> void:
 	var bodies := int(_client_bridge.describe()["bodies"])
 	_check(bodies == _server_game.props.world_count() and bodies > 0, "and every prop", "%d" % bodies)
 	_check(not _mine().watching, "a finisher is fighting, not watching")
+
+	# The gun in their hand, as somebody else draws it. Armed on the server as a pickup arms
+	# them, and announced as the module announces it (this suite has no module); the client's
+	# copy of this player, drawn as a watcher would, holds it at the end of its right arm.
+	var server_me: WoPlayer = _server_game.players[WoNetBridge.player_key(SESSION)]
+	var _armed := _server_game.arm(server_me, &"pistol")
+	_server_bridge.announce_armed(server_me.player_id, &"pistol")
+	await _steps(4)
+	var copy := _mine()
+	var _shown := copy.present_body(false, copy.global_position, Color.WHITE)
+	var hand := copy.figure.attachment(&"right_hand") if copy.figure != null else null
+	_check(
+		copy.figure != null and copy.figure.holding == &"pistol" and copy.figure.held != null
+			and copy.figure.held.equipped() == &"pistol"
+			and hand != null and String(hand.get_parent().name) == "arm-right",
+		"a watcher draws the weapon in their right hand",
+		"%s drawn, dealt %s" % [
+			String(copy.figure.holding) if copy.figure != null else "-", str(copy.dealt)
+		]
+	)
 
 	await _steps(int(_server_game.config.handover_seconds * SERVER_TICK_RATE) + 4)
 	_check(_client_game.phase == WoGame.Phase.FINALE, "the client knows the fight is on")

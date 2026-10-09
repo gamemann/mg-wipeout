@@ -127,6 +127,38 @@ var beacon_marker: WoBeacon = null
 ## What other people see this player as. Client side.
 var figure: WoFigure = null
 
+# --- What a watcher draws in their hand. Client side --------------------------
+#
+# A player this process SIMULATES (an offline stand-in, or yourself in third person) is read
+# off their own rig. One it only MIRRORS has no rig here at all — the server owns it — so it
+# is drawn from two things the wire already carries: the weapons the server ANNOUNCED it
+# dealt them (`WoEvents.Kind.ARMED`, one per weapon) and the slot the snapshot says is in
+# hand. A slot alone names no weapon, because the pack puts several weapons in each slot;
+# the dealt list alone does not say which of two is out.
+
+## Whether [member mirror_slot] and the rest are written from a snapshot (`WoPlayerNet`).
+var mirrored: bool = false
+
+## The weapons the server said it dealt them, in the order it dealt them.
+var dealt: Array[StringName] = []
+
+## The round [member dealt] belongs to: a deal for a new round starts a new list.
+var dealt_round: int = -1
+
+var mirror_slot: int = 0
+var mirror_switching: bool = false
+
+## Uses the snapshot reported since the figure last drew them, and their kind.
+var mirror_fired: int = 0
+var mirror_fire_kind: int = 0
+
+## The rig's own counter as the figure last saw it, for a simulated player.
+var _seen_fire_seq: int = -1
+
+## Every pack weapon's slot, by id. Built once per process; a slot does not depend on the
+## damage table a game passes the pack.
+static var _slots: Dictionary = {}
+
 var tick_rate: int = 64:
 	set(value):
 		tick_rate = value
@@ -429,11 +461,79 @@ func present_body(own_view: bool, at: Vector3, team_colour: Color) -> bool:
 
 	figure.visible = shown
 
+	if shown:
+		_present_held()
+
 	if shown and controller != null:
 		var velocity := controller.state.velocity
 		figure.pose(at, deg_to_rad(controller.state.yaw), Vector2(velocity.x, velocity.z).length())
 
 	return shown
+
+
+## Records a weapon the server dealt them. [param round_number] is the client's round.
+func note_dealt(weapon_id: StringName, round_number: int) -> void:
+	if round_number != dealt_round:
+		dealt.clear()
+		dealt_round = round_number
+
+	if not dealt.has(weapon_id):
+		dealt.append(weapon_id)
+
+
+## Tells the figure what is in this player's hand this frame, and whether it went off.
+func _present_held() -> void:
+	var rig := _rig()
+	var id := &""
+	var switching := false
+	var fired := 0
+	var kind := 0
+
+	if rig != null and rig.arsenal != null:
+		var def := rig.arsenal.current_def()
+		id = def.id if def != null else &""
+		switching = rig.arsenal.is_switching()
+		var seq := rig.fire_seq % ZeeWeaponNet.FIRE_SEQ_WRAP
+		fired = ZeeWeaponNet.uses_between(_seen_fire_seq, seq) if _seen_fire_seq >= 0 else 0
+		_seen_fire_seq = seq
+		kind = rig.fire_kind
+	elif mirrored:
+		id = held_by_slot(dealt, mirror_slot)
+		switching = mirror_switching
+		fired = mirror_fired
+		kind = mirror_fire_kind
+
+	mirror_fired = 0
+	figure.hold(id, switching)
+	figure.fired(fired, kind)
+
+
+## Which of [param ids] is in [param slot], or nothing. The first dealt wins a shared slot,
+## which is the one the server selects at the handover.
+static func held_by_slot(ids: Array[StringName], slot: int) -> StringName:
+	if slot <= 0 or ids.is_empty():
+		return &""
+
+	if _slots.is_empty():
+		for def in ZeeWeaponPack.weapons():
+			_slots[def.id] = def.slot
+
+	for id in ids:
+		if int(_slots.get(id, -1)) == slot:
+			return id
+
+	return &""
+
+
+## The rig this process simulates them with: the server's, an offline stand-in's, or the
+## one a networked client builds for its own player's hands (`WoClient._arm_locally`, which
+## hangs it on the player without setting [member weapons], because a client must not hand
+## its rig to the simulation's lookups).
+func _rig() -> ZeeWeaponRig:
+	if weapons != null:
+		return weapons
+
+	return get_node_or_null(^"Weapons") as ZeeWeaponRig
 
 
 func _atlas() -> String:

@@ -50,9 +50,21 @@ const ROLE_FILES := {
 	Role.DECK: "deck.png",
 	Role.PILLAR: "pillar.png",
 	Role.CANNON: "cannon.png",
-	Role.ARENA: "arena.png",
+	Role.ARENA: "deck.png",
 	Role.HAZARD: "hazard.png",
 	Role.SAFE: "safe.png",
+}
+
+## A colour an INSTALLED texture is multiplied by, for a role that has no colour of its own.
+##
+## [b]The arena is the light deck, tinted lavender, and not Kenney's purple.[/b] The set has
+## six colours and six roles, so the arena got the purple one — a 157/36/250 grid that the
+## arenas' warm evening sun turned into a magenta floor the whole final death was fought on,
+## found by `tools/shot.sh --view=finale`. A tint over the near-white deck keeps the floor
+## readable as "not the course" without the glare, and multiplying a light grey is not the
+## double tint `surface` warns about, because the grey has no colour to muddy.
+const INSTALLED_TINTS := {
+	Role.ARENA: Color(0.78, 0.70, 0.92),
 }
 
 ## What the generated fallback grid is tinted with, per role, when no set is installed.
@@ -138,6 +150,8 @@ static func surface(role: Role, moving: bool = false) -> StandardMaterial3D:
 		# installed set brings its own colour and is drawn white, because multiplying
 		# Kenney's orange by a role tint is a double tint that produces mud.
 		material.albedo_color = ROLE_COLOURS.get(role, Color.WHITE)
+	else:
+		material.albedo_color = INSTALLED_TINTS.get(role, Color.WHITE)
 
 	material.albedo_texture = texture
 

@@ -69,8 +69,18 @@ var from_art: bool = false
 ## The clip playing, for the suite and for `describe()`.
 var clip: StringName = &""
 
+## The weapon this figure is drawn holding, by id; empty for empty hands. Read by the suite.
+var holding: StringName = &""
+
+## The gun in the hand. Built the first time this figure holds anything; see [method hold].
+var held: ZeeWorldModel = null
+
 var _model: Node3D = null
 var _anim: AnimationPlayer = null
+var _arm: Node3D = null
+var _hand: Node3D = null
+var _scale_by: float = 1.0
+var _posed_at_usec: int = -1
 
 
 func _init() -> void:
@@ -87,6 +97,12 @@ func build(height: float, atlas_path: String, colour: Color) -> void:
 	team_colour = colour
 	clip = &""
 	_anim = null
+	_arm = null
+	# The hand and the gun in it hung off the old model and go with it; [method hold] builds
+	# them again on the next frame, from [member holding], which outlives a rebuild.
+	_hand = null
+	held = null
+	_posed_at_usec = -1
 
 	if _model != null:
 		_model.queue_free()
@@ -120,7 +136,17 @@ func build(height: float, atlas_path: String, colour: Color) -> void:
 	_model.position = Vector3(0.0, -bounds.position.y * scale_by, 0.0)
 
 	_paint(_model, atlas_path, colour)
+	_scale_by = scale_by
+	_arm = _model.find_child("arm-right", true, false) as Node3D
 	_anim = _model.find_child("AnimationPlayer", true, false) as AnimationPlayer
+
+	# [b]Advanced by [method pose], not by the engine[/b], so that the arm can be held up
+	# AFTER the walk has been applied to it. The kit's `holding-right` clip is the whole body
+	# standing still with one arm out; playing it would stop the legs. Left to the engine, the
+	# player's own process and this one's run in an order nothing here controls, and an arm
+	# set before the clip writes it is an arm the clip puts back down.
+	if _anim != null:
+		_anim.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 
 
 ## Puts the figure where this frame draws its player, facing [param yaw_radians], moving at
@@ -137,6 +163,121 @@ func pose(at: Vector3, yaw_radians: float, speed: float) -> void:
 		wanted = &"walk"
 
 	_play(wanted)
+
+	if _anim != null:
+		var now := Time.get_ticks_usec()
+		# A figure that was hidden for a minute is not a minute behind: clamped, so it picks
+		# up the clip where it was rather than fast-forwarding through it in one frame.
+		var delta := 0.0 if _posed_at_usec < 0 else clampf((now - _posed_at_usec) / 1e6, 0.0, 0.1)
+		_posed_at_usec = now
+		_anim.advance(delta)
+
+	# The kit's own `holding-right` pose, over whatever the legs are doing: one rotation of
+	# the arm about its shoulder, measured off the clip (-90 degrees about X).
+	if _arm != null and holding != &"":
+		_arm.rotation = HOLD_ARM
+
+
+## Draws [param id] in the right hand, or nothing for an empty id. [param switching] hides
+## it mid-switch, the way [ZeeWorldModel] does.
+##
+## [b]Asked every frame and cheap when nothing changed[/b]: the model is only re-equipped
+## when the id differs from what is drawn.
+func hold(id: StringName, switching: bool) -> void:
+	holding = id
+
+	if id == &"":
+		if held != null:
+			held.visible = false
+		return
+
+	if held == null:
+		held = ZeeWorldModel.new()
+		held.name = "Held"
+		# This game has its own sound for somebody else's shot, by kind, played from the
+		# counter (`WoAudio.on_weapon`); the hand draws the flash and the tracer. By name,
+		# for a shell older than the property: see its own note.
+		held.set(&"sounds", false)
+
+		if not held.attach_to(self):
+			held.free()
+			held = null
+			return
+
+	if held.equipped() != id:
+		var art: Variant = ZeeWeaponArtTable.table().get(id)
+
+		if art is ZeeWeaponArt:
+			var _drawn := held.equip(art as ZeeWeaponArt)
+		else:
+			held.clear()
+
+	held.visible = true
+	held.on_switching(switching)
+
+
+## The weapon in this figure's hand was used [param times] times, as a [ZeeWeaponNet] kind.
+## One kick however many, as `ZeeWeaponNet.apply` does: a burst's recoil in one frame reads
+## as the gun jumping out of the hand.
+func fired(times: int, kind: int) -> void:
+	if times <= 0 or held == null or not held.visible:
+		return
+
+	held.on_fired(WATCHED_RECOIL.get(kind, Vector2(0.6, 0.1)), kind)
+
+
+## The node a held weapon hangs from, by the name [ZeeWorldModel] asks for.
+##
+## [b]At the end of the kit's right arm, as a child of it[/b], so the gun moves with the arm
+## — the shot's kick in the clip, a melee swing — rather than floating at a fixed point in
+## front of the chest. Turned so that its -Z is the way the arm points when it is held up and
+## its +Y is up, and scaled back to metres, because the model it hangs in is scaled to the
+## player's hull and a weapon drawn at two-thirds of its size reads as a toy.
+func attachment(point: StringName) -> Node3D:
+	if point != &"right_hand":
+		return null
+
+	if _hand != null and is_instance_valid(_hand):
+		return _hand
+
+	_hand = Node3D.new()
+	_hand.name = "RightHand"
+
+	if _arm != null:
+		var unscale := 1.0 / maxf(_scale_by, 0.01)
+		_hand.transform = Transform3D(HAND_BASIS.scaled(Vector3.ONE * unscale), HAND_AT)
+		_arm.add_child(_hand)
+	elif _model != null:
+		# The capsule: chest high, right of centre, in front.
+		_hand.position = Vector3(0.26, 1.12, -0.34)
+		_model.add_child(_hand)
+	else:
+		_hand.free()
+		_hand = null
+
+	return _hand
+
+
+## The arm, held up: the `holding-right` clip's one rotation.
+const HOLD_ARM := Vector3(-PI * 0.5, 0.0, 0.0)
+
+## Where the hand is in the arm's own frame: the bottom of the arm's mesh, at the middle of
+## its cross-section ((-0.4..0, -1..0.1, -0.2..0.2) in the kit's units).
+const HAND_AT := Vector3(-0.2, -0.92, 0.0)
+
+## The hand's axes in the arm's frame: +X across, +Y along the arm's +Z (up, once the arm is
+## raised), +Z up the arm toward the shoulder — so -Z runs down it, out of the fist.
+const HAND_BASIS := Basis(Vector3(-1.0, 0.0, 0.0), Vector3(0.0, 0.0, 1.0), Vector3(0.0, 1.0, 0.0))
+
+## How far a watched gun kicks per kind of use, in the recoil's own degrees. The real
+## recoil is on an outcome that does not travel, so a watcher's is approximate on purpose;
+## game-arena's numbers.
+const WATCHED_RECOIL := {
+	ZeeWeaponNet.KIND_SWING: Vector2(1.2, 0.0),
+	ZeeWeaponNet.KIND_SPAWN: Vector2(2.0, 0.0),
+	ZeeWeaponNet.KIND_THROW: Vector2(2.0, 0.0),
+	ZeeWeaponNet.KIND_BEAM: Vector2(0.05, 0.0),
+}
 
 
 func _play(wanted: StringName) -> void:
@@ -244,5 +385,6 @@ func describe() -> Dictionary:
 		"atlas": atlas.get_file(),
 		"visible": visible,
 		"clip": String(clip),
+		"holding": String(holding),
 		"at": str(global_position.snapped(Vector3.ONE * 0.01)) if is_inside_tree() else "-",
 	}

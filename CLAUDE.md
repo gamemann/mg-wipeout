@@ -30,7 +30,7 @@ game/
   wo_services.gd     chat, voice and moderation over dot-game's base (respawn = last checkpoint)
   net/               the codec (STAGE, PROGRESS, PICKUP…), the link, two behaviours, the bridge
 courses -> ../mg-wipeout-maps/courses   (a dot-bootstrap link; .gitignore says so)
-examples/            headless_run (82), headless_courses (every course), headless_net (45), dedicated (23)
+examples/            headless_run (99), headless_courses (every course), headless_net (46), dedicated (23)
 tools/               shot.sh/.gd — render a view; trace_course — where a stand-in falls and why
 ```
 
@@ -76,9 +76,9 @@ They run the document's route (`route` in mg-wipeout-maps). The flags are the wh
 godot --headless --path . --import
 find . -name '*.gd' -not -path './.godot/*' -not -path './addons/*' | while read f; do
     godot --headless --path . --check-only --script "res://${f#./}"; done
-godot --headless --path . res://examples/headless_run.tscn       # 82 checks
+godot --headless --path . res://examples/headless_run.tscn       # 99 checks
 godot --headless --path . res://examples/headless_courses.tscn   # every course run by a stand-in, every arena stood in
-godot --headless --path . res://examples/headless_net.tscn       # 10 sections, 45 checks
+godot --headless --path . res://examples/headless_net.tscn       # 10 sections, 46 checks
 godot --headless --path . res://examples/dedicated.tscn          # 6 sections, 23 checks
 godot --headless --path . res://tools/trace_course.tscn -- --course=wo_log_roll --every=0.5
 tools/shot.sh --view=course --wo-course-ids=wo_grand_tour
@@ -121,11 +121,23 @@ A death on a client breaks the figure (dot-player-char's `DotPlayerBodyBreak`, n
 
 `WoPlayer.points` add up over a match: `finish_points` by place (10, 7, 5, then `finish_points_rest` 3) and `winner_points` (10) for the side that wins the round, final death included, on the authority. `net_points` and `net_ping` replicate to everybody; the module copies each session's `ping_ms` (dot-server's) onto its player with the roster check. **Tab holds dot-ui's `DotScoreboardScreen`** with this game's columns: a swatch per player (a stand-in for an avatar picture, coloured by golden-ratio spread because Godot's string hash is near-sequential and `bot1`/`bot2` came out the same colour), name, points, place ("out" when knocked out), ping. `tools/shot.sh --view=third --board` renders it; the first render also found the board's title over the course name and its last column clipped, fixed in dot-ui. **Still a swatch, not the avatar**: a rendered thumbnail of each avatar is the next step.
 
+## The machinery is heard (2026-10-08)
+
+**Derived on the client, once a frame, from the course, and never sent** — Decision 1 again, and mg-smash-copter's creak. `WoAudio.present_machinery(course, seconds, listener)` evaluates the obstacles at this frame's time against the last frame's: an arm crossing the listener's bearing from its hub is a whoosh where it passes (within `arm_length + WHOOSH_REACH`), a hammer through the bottom of its swing is a whoosh, a ram arriving at full reach is a thump, and a tile starting its red warning is a rattle from that tile, as long as the warning. The three sounds are synthesised into dot-audio's bank under the id and path a file would have (mg-deathrun's way), so an `.ogg` still wins. **A jump in time is not a sweep**: more than 0.25 s since the last frame, or a new stage (`reset_machinery`), only remembers the time, or every arm on the course would be heard passing at once. **Which side of the bearing is a bool, not `signf`**: an arm exactly on it is a zero, and `signf(0)` differs from both signs, so a frame that started there was a pass that had not happened (found by the suite's own debugging). `headless_run`'s "the machinery is heard" builds four real courses, stands a listener beside one machine of each kind for twelve seconds and counts what the null sink recorded (4 arm passes, which is what 65 degrees a second on two arms predicts); armed — the time-jump check fails without the guard, once its jump was chosen to cross a bearing (a longer one aliased both arms back to their own side and passed regardless). **The ears have to be set first**: the manager culls by distance from them, and left at the origin it culled a spinner 34 m away.
+
+## A gun in somebody else's hand (2026-10-08)
+
+mg-smash-copter's watcher figures, ported as they are (`WoFigure` is that file renamed): a `ZeeWorldModel` at the end of the kit's own `arm-right`, held up over the walk cycle; read off the rig for a simulated player, and off the snapshot's slot among the weapons the server announced (`WoPlayer.dealt`, noted by the bridge per `ARMED`) for a mirrored one. `headless_net`'s final-death section arms the client's player with a pistol and checks a watcher draws it there (46 checks). The pickup-armed case was also hit by dot-weapon's endless switch (fixed there, 4d543f7): a second pickup in another slot holstered for ever.
+
+## Two things a render found (2026-10-08)
+
+- **The course was introduced twice at every boot**: the warmup lays round one's course and `start()` builds it again (Decision 2), and both rebuilds shouted the name and wrote the blurb into the chat. `WoClient._on_stage` introduces a stage once per five seconds.
+- **The final death was fought on a magenta floor.** The prototype set has six colours for six roles, so the arena got Kenney's purple, and the arenas' warm evening sun made it magenta. The arena is the light deck tinted lavender now (`WoTextures.INSTALLED_TINTS`); `arena.png` is gone.
+
 ## Still to do
 
 In the order they are worth doing.
 
 1. **Put it live.** Create `gamemann/mg-wipeout` and `gamemann/mg-wipeout-maps` on GitHub, push, tag both (maps first: the game's `server_dependencies` is pinned at install), and add `gamemann/mg-wipeout` to a server's `TMC_GAMES` (a published game is `<owner>/<name>`; the bare `wipeout` is only dot-server-deploy's local `content/wipeout/`, which `examples/wipeout_client` tests against). Not done here because publishing and pushing are the owner's call.
-2. **A world model in a watcher's hands**, as mg-smash-copter's list says, and a figure holding a carried prop.
-3. **Sounds for the machinery**: an arm's whoosh, a ram's thump, and a sound to go with a tile's red warning.
-4. **Course levels for the nightly quota** — see mg-wipeout-maps' CLAUDE.md for what a level is here.
+2. **A figure holding a carried prop.** The gravity gun's prop floats in front of a watched player with their arms at their sides.
+3. **Course levels for the nightly quota** — see mg-wipeout-maps' CLAUDE.md for what a level is here.

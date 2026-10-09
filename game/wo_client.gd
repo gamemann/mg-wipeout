@@ -91,6 +91,13 @@ var _sampler: DotFpsSampler = null
 ## before it does.
 var _watch_id: int = -1
 
+## The stage last introduced, and when, so one stage is introduced once. See [method _on_stage].
+var _introduced: StringName = &""
+var _introduced_msec: int = -1000000
+
+## The course time this frame drew the obstacles at, or a negative before the first.
+var _stage_seconds: float = -1.0
+
 ## Whether the pointer is ours. See [method _capture].
 var _captured: bool = false
 
@@ -363,16 +370,35 @@ func _on_phase(phase: int) -> void:
 			hud.shout("LAST ONE STANDING", 1.8)
 
 
+## How long the same stage is not introduced again. See [method _on_stage].
+const INTRODUCE_AGAIN_MSEC := 5000
+
+
 ## A new course or arena. The name, once, big; the camera re-placed, because the player was
 ## just moved somewhere that may be eighty metres away.
-func _on_stage(_stage_id: StringName, is_arena: bool) -> void:
+func _on_stage(stage_id: StringName, is_arena: bool) -> void:
 	_clear_pickups()
+
+	# A new course's clock is not the last one's, so its first frame is not a sweep of every arm.
+	if audio != null:
+		audio.reset_machinery()
 
 	if game.stage == null:
 		return
 
 	var name_of := str(game.stage.doc.get("name", ""))
 	var blurb := str(game.stage.doc.get("blurb", ""))
+
+	# [b]Once, though the world is rebuilt twice for it.[/b] The warmup lays round one's
+	# course out and `WoGame.start` builds the same one again (Decision 2), so offline the
+	# name was shouted and the blurb written into the chat twice, a frame apart, at every
+	# boot. By time rather than by round: the rebuild happens inside one round, and a server
+	# with one course plays it again next round, which should be introduced again.
+	var now := Time.get_ticks_msec()
+	if stage_id == _introduced and now - _introduced_msec < INTRODUCE_AGAIN_MSEC:
+		return
+	_introduced = stage_id
+	_introduced_msec = now
 
 	if not is_arena:
 		hud.shout(name_of, 3.0)
@@ -1112,7 +1138,8 @@ func _pose_stage() -> void:
 	if net != null and net.is_running():
 		tick = float(net.clock.tick)
 
-	game.stage.pose_at_time((tick + Engine.get_physics_interpolation_fraction()) / float(maxi(game.tick_rate, 1)))
+	_stage_seconds = (tick + Engine.get_physics_interpolation_fraction()) / float(maxi(game.tick_rate, 1))
+	game.stage.pose_at_time(_stage_seconds)
 
 
 ## What a frame on a course adds: the countdown's beeps, the shake of a knock, the spin of a
@@ -1165,6 +1192,10 @@ func _present_effects(delta: float) -> void:
 	# camera — so a player watching a team-mate hears what that team-mate hears.
 	if audio != null:
 		audio.listen_from(camera.global_position)
+
+		# The machinery, from the time the course was drawn at this frame.
+		if game.stage != null and not game.stage.doc.is_empty() and _stage_seconds >= 0.0:
+			var _machines := audio.present_machinery(game.stage, _stage_seconds, camera.global_position)
 
 	if game.effects != null:
 		game.effects.viewer_position = camera.global_position

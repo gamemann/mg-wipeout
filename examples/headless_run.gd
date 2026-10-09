@@ -5,6 +5,7 @@ const WoConfig := preload("../game/wo_config.gd")
 const WoContent := preload("../game/wo_content.gd")
 const WoCourse := preload("../game/wo_course.gd")
 const WoCourseDoc := preload("../game/wo_course_doc.gd")
+const WoAudio := preload("../game/wo_audio.gd")
 const WoGame := preload("../game/wo_game.gd")
 const WoPaths := preload("../game/wo_paths.gd")
 const WoPlayer := preload("../game/wo_player.gd")
@@ -17,9 +18,9 @@ const WoProgress := preload("../game/wo_progress.gd")
 ## because the section announced itself on the way in. mg-smash-copter and dot-settings both
 ## have the story; every total here was armed by raising it by one and watching the run fail.
 
-const SECTIONS := 19
+const SECTIONS := 20
 
-const CHECKS := 94
+const CHECKS := 99
 
 const TICK_RATE := 64
 const TICK := 1.0 / float(TICK_RATE)
@@ -61,6 +62,7 @@ func _run() -> void:
 	await _test_nobody_finishes()
 	await _test_knocks_hurt()
 	await _test_the_weather()
+	await _test_the_machinery_is_heard()
 
 	for world in _worlds.duplicate():
 		await _dispose(world)
@@ -712,6 +714,85 @@ func _high_arm_course() -> Dictionary:
 			"arm_thickness": 0.3, "speed": 90.0, "arms": 1},
 	]
 	return doc
+
+
+## The machinery is heard, and from the course alone: an arm or a hammer going past, a ram
+## arriving, a tile starting its warning. A real course of each kind, a listener stood beside
+## one machine, twelve seconds of frames, and what dot-audio's null sink recorded.
+func _test_the_machinery_is_heard() -> void:
+	_section("the machinery is heard, from the course and nothing else")
+	var catalogue := WoCatalogue.new()
+	var _loaded := catalogue.load_from("courses")
+	var cases := [
+		["wo_spin_cycle", "spinner", WoAudio.MACHINE_WHOOSH, "an arm sweeping past"],
+		["wo_hammer_gauntlet", "pendulum", WoAudio.MACHINE_WHOOSH, "a hammer through the bottom of its swing"],
+		["wo_punch_alley", "pusher", WoAudio.MACHINE_RAM, "a ram at full reach"],
+		["wo_trapdoor_run", "tiles", WoAudio.MACHINE_TILE, "a tile starting its warning"],
+	]
+
+	for case: Array in cases:
+		var doc: Dictionary = catalogue.courses.get(StringName(case[0]), {})
+		var heard := 0
+
+		if not doc.is_empty():
+			var game := await _world(Callable(), doc)
+			var audio := WoAudio.new()
+			add_child(audio)
+			var _ready_now := audio.setup()
+			var sink := audio.manager.sink as DotAudioSinkNull
+			var listener := _beside_a(game.stage, str(case[1]))
+			# The ears first, as the client puts them every frame: the manager culls by
+			# distance from them, and left at the origin it culled a spinner 34 m away.
+			audio.listen_from(listener)
+
+			for frame in range(12 * 60):
+				var _started := audio.present_machinery(game.stage, float(frame) / 60.0, listener)
+
+			heard = sink.count_of(case[2]) if sink != null else 0
+			audio.queue_free()
+
+		_check(heard > 0, "%s is heard (%s)" % [case[3], case[0]], "%d" % heard)
+
+	# A jump in time is not a sweep: a new stage's first frame plays nothing.
+	var doc: Dictionary = catalogue.courses.get(&"wo_spin_cycle", {})
+	var jumped := -1
+
+	if not doc.is_empty():
+		var game := await _world(Callable(), doc)
+		var audio := WoAudio.new()
+		add_child(audio)
+		var _ready_now := audio.setup()
+		var listener := _beside_a(game.stage, "spinner")
+		audio.listen_from(listener)
+		var _first := audio.present_machinery(game.stage, 0.0, listener)
+		var _second := audio.present_machinery(game.stage, 0.05, listener)
+		# 0.05 to 2.85 s carries the second arm across the listener's bearing (it is there at
+		# 2.77 s): a jump that, read as a sweep, IS one. A longer jump can alias both arms back
+		# to the side they started on and pass with the guard taken out.
+		jumped = audio.present_machinery(game.stage, 2.85, listener)
+		audio.queue_free()
+
+	_check(jumped == 0, "and a jump in time plays nothing", "%d" % jumped)
+	_finished()
+
+
+## A point a listener stands at, a little way off the first piece of [param kind].
+static func _beside_a(course: WoCourse, kind: String) -> Vector3:
+	for piece: Dictionary in course.pieces:
+		if str(piece.get("kind", "")) != kind:
+			continue
+
+		var spec: Dictionary = piece["spec"]
+
+		match kind:
+			"spinner":
+				return (spec["at"] as Vector3) + Vector3(float(spec["arm_length"]) * 0.6, 1.0, 0.0)
+			"pendulum":
+				return (spec["pivot"] as Vector3) + Vector3(0.0, -float(spec["length"]), 2.0)
+			_:
+				return (spec["at"] as Vector3) + Vector3(0.0, 1.0, 1.5)
+
+	return Vector3.ZERO
 
 
 func _section(name: String) -> void:

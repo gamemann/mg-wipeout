@@ -316,13 +316,21 @@ func _adopt() -> void:
 ## snapshot cannot do any of those: a watcher who missed a snapshot sees it jump by two and
 ## plays one flash instead of two, which is the correct amount of wrong.
 ##
-## The world model is null here and that is not a gap. Drawing somebody else's gun in their
-## hands needs a character with a hand mount, which this game has not built — see its
-## CLAUDE.md. What the state is for meanwhile is the HUD and the fact that it is CARRIED at
-## all, and `ZeeWeaponNet.apply` is written to take a null model and still answer.
+## [b]No world model is handed to `ZeeWeaponNet.apply`[/b], because the hand it would hang
+## from belongs to the figure, which is built lazily, rebuilt on a side change and absent on
+## a server. The answer is written onto the player instead — the slot, the switch and the
+## uses since the figure last looked — and `WoPlayer.present_body` hands it to the figure on
+## the frame it is drawn. The same counter also says `weapon_used`, which is the report.
 func _apply_weapons() -> void:
 	var answer := ZeeWeaponNet.apply(self, null, _seen_fire_seq)
 	_seen_fire_seq = int(answer["seq"])
+
+	player.mirrored = true
+	player.mirror_slot = net_slot
+	player.mirror_switching = net_switching
+	player.mirror_fired += int(answer["fired"])
+	if int(answer["fired"]) > 0:
+		player.mirror_fire_kind = int(answer["kind"])
 
 	if int(answer["fired"]) > 0:
 		weapon_used.emit(int(answer["fired"]), int(answer["kind"]))

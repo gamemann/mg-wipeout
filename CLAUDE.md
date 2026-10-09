@@ -30,7 +30,7 @@ game/
   wo_services.gd     chat, voice and moderation over dot-game's base (respawn = last checkpoint)
   net/               the codec (STAGE, PROGRESS, PICKUP…), the link, two behaviours, the bridge
 courses -> ../mg-wipeout-maps/courses   (a dot-bootstrap link; .gitignore says so)
-examples/            headless_run (103), headless_courses (every course), headless_net (46), dedicated (23)
+examples/            headless_run (103), headless_courses (every course, 61 checks with Lily Pond), headless_net (46), dedicated (23)
 tools/               shot.sh/.gd — render a view; trace_course — where a stand-in falls and why
 ```
 
@@ -66,6 +66,7 @@ They run the document's route (`route` in mg-wipeout-maps). The flags are the wh
 - In the air toward a `jump` point, `_bot_land_on` predicts the landing and brakes *proportionally* (full back-wish removes 3 m/s in ONE tick and stopped every jump dead).
 - `wait` — hold until `WoCourse.path_clear` says the run to the next point meets no hazard: exact, because the hazards are functions of the tick. Walk only the last 1.6 m into a stop point (walking 2.5 m walked the bot through the ram it had timed at a run).
 - `board` — something to land on: hold until it will be under the landing and within 5 m; then run and jump at whatever edge comes first (`supported` 0.7 m ahead), but step a gap a stride crosses (jumping the 30 cm to a mover carried the bot over it). `ride` — a point ON a carrier is reached by standing on any carrier (chasing the mover's start coordinates walked the bot off its tail).
+- `onward` (2026-10-08, mg-wipeout-maps' lily pads) — a jump point the bot may land PAST: the jump from it, and the run-up before the jump, aim at the next point instead of back at this one. Opt-in per point, because doing it on every jump point broke four courses that passed: a gap's edge point is routinely passed before the take-off, and turning there spoils a straight run-up.
 - `_bot_hop` jumps an arm due in 0.2–0.4 s along the heading; `_bot_unstick` jumps after a second of going nowhere, or lets go on a face too steep to jump from (a turning log's steep side was a 30-second treadmill).
 
 `bot_fumble_chance` misses a jump per bot, waypoint and round, reproducibly.

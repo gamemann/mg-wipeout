@@ -1925,6 +1925,18 @@ func _bot_run(player: WoPlayer, command: DotFpsCommand) -> void:
 		if not grounded:
 			return
 
+		# [b]Toward where the jump is GOING, on a point marked `onward`.[/b] A bot that
+		# landed half a metre past a lily pad's centre was still facing that centre, behind
+		# it, and hopped backwards and wide into the water every time. Opt-in per point,
+		# because doing it everywhere broke four courses that passed: a gap's edge point is
+		# routinely passed before the take-off, and turning there spoils a straight run-up.
+		# Before the run-up below, which on a pad would otherwise run back at the point too.
+		if bool(point.get("onward", false)) and not next.is_empty():
+			var onward: Vector3 = (next["at"] as Vector3) - at
+			onward.y = 0.0
+			if onward.length() > 0.1:
+				command.yaw = rad_to_deg(atan2(-onward.x, -onward.z))
+
 		# Up to speed first, for a few ticks: a landing on a ball or a turning log costs speed,
 		# and a jump taken at four metres a second off a log falls short of the next one — a
 		# jump is cut short in the air, never stretched.
@@ -1944,6 +1956,7 @@ func _bot_run(player: WoPlayer, command: DotFpsCommand) -> void:
 
 		if draw.next_range_f(0.0, 100.0) >= config.bot_fumble_chance:
 			command.set_button(DotFpsCommand.BUTTON_JUMP, true)
+
 
 	_bot_route[player.player_id] = index + 1
 

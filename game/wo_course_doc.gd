@@ -227,6 +227,9 @@ static func _course(doc: Dictionary) -> DotResult:
 			"board": bool((entry as Dictionary).get("board", false)),
 			# A point ON something that moves: standing on any carrier reaches it.
 			"ride": bool((entry as Dictionary).get("ride", false)),
+			# A jump point a stand-in may land PAST (a small pad that is not on the line): the
+			# jump from it is aimed at the next point, not back at this one. See [WoGame].
+			"onward": bool((entry as Dictionary).get("onward", false)),
 		})
 
 	doc["route"] = route

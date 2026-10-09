@@ -30,7 +30,7 @@ game/
   wo_services.gd     chat, voice and moderation over dot-game's base (respawn = last checkpoint)
   net/               the codec (STAGE, PROGRESS, PICKUP…), the link, two behaviours, the bridge
 courses -> ../mg-wipeout-maps/courses   (a dot-bootstrap link; .gitignore says so)
-examples/            headless_run (99), headless_courses (every course), headless_net (46), dedicated (23)
+examples/            headless_run (101), headless_courses (every course), headless_net (46), dedicated (23)
 tools/               shot.sh/.gd — render a view; trace_course — where a stand-in falls and why
 ```
 
@@ -76,7 +76,7 @@ They run the document's route (`route` in mg-wipeout-maps). The flags are the wh
 godot --headless --path . --import
 find . -name '*.gd' -not -path './.godot/*' -not -path './addons/*' | while read f; do
     godot --headless --path . --check-only --script "res://${f#./}"; done
-godot --headless --path . res://examples/headless_run.tscn       # 99 checks
+godot --headless --path . res://examples/headless_run.tscn       # 101 checks
 godot --headless --path . res://examples/headless_courses.tscn   # every course run by a stand-in, every arena stood in
 godot --headless --path . res://examples/headless_net.tscn       # 10 sections, 46 checks
 godot --headless --path . res://examples/dedicated.tscn          # 6 sections, 23 checks
@@ -133,6 +133,10 @@ mg-smash-copter's watcher figures, ported as they are (`WoFigure` is that file r
 
 - **The course was introduced twice at every boot**: the warmup lays round one's course and `start()` builds it again (Decision 2), and both rebuilds shouted the name and wrote the blurb into the chat. `WoClient._on_stage` introduces a stage once per five seconds.
 - **The final death was fought on a magenta floor.** The prototype set has six colours for six roles, so the arena got Kenney's purple, and the arenas' warm evening sun made it magenta. The arena is the light deck tinted lavender now (`WoTextures.INSTALLED_TINTS`); `arena.png` is gone.
+
+## Settings, and Escape opens them (2026-10-08)
+
+`WoSettings` is mg-buses-from-hell's `BfhSettings` renamed: sensitivity (ACCOUNT, the family's 0.022 degrees per unit), field of view (SERVER_CLAMPED, default the 92 the camera always had) and three volumes on dot-audio's mixer, applied after load and bound to the sampler, the camera and the mixer. Escape, which only let go of the mouse, now opens dot-ui's `DotSettingsScreen` too, and walking is suspended while it is up, as while typing. dot-settings is newly linked (`.gitignore`; the shell already vendors it). `headless_run`'s "the client's settings are read" boots a real offline client and checks both, and Escape; rendered with the screen open over a course.
 
 ## Still to do
 

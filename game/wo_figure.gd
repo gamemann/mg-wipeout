@@ -87,6 +87,12 @@ var _hand: Node3D = null
 var _scale_by: float = 1.0
 var _posed_at_usec: int = -1
 
+## The last frame's length, for the swing's clock.
+var _frame_seconds: float = 0.0
+
+## Seconds into a melee swing the arm is, or negative when not swinging. See [method fired].
+var _swing: float = -1.0
+
 
 func _init() -> void:
 	# The caller places it; see the class note.
@@ -177,12 +183,22 @@ func pose(at: Vector3, yaw_radians: float, speed: float) -> void:
 		# up the clip where it was rather than fast-forwarding through it in one frame.
 		var delta := 0.0 if _posed_at_usec < 0 else clampf((now - _posed_at_usec) / 1e6, 0.0, 0.1)
 		_posed_at_usec = now
+		_frame_seconds = delta
 		_anim.advance(delta)
 
 	# The kit's own `holding-right` pose, over whatever the legs are doing: one rotation of
 	# the arm about its shoulder, measured off the clip (-90 degrees about X).
 	if _arm != null and (holding != &"" or carrying):
 		_arm.rotation = HOLD_ARM
+
+	# A swing overrides the hold for as long as the kit's swing clip lasts, sampled for the
+	# right arm alone so the legs keep the walk under it.
+	if _swing >= 0.0 and _arm != null:
+		var swung := _swing_arm(_swing)
+		if swung:
+			_swing += _frame_seconds
+		else:
+			_swing = -1.0
 
 	# [b]Both arms out for a carried prop[/b] — the kit's `holding-both` is that rotation on
 	# each arm. The prop itself hangs in front of the carrier wherever the gravity gun holds
@@ -237,6 +253,34 @@ func fired(times: int, kind: int) -> void:
 		return
 
 	held.on_fired(WATCHED_RECOIL.get(kind, Vector2(0.6, 0.1)), kind)
+
+	# [b]A swing is the arm, not a kick.[/b] A knife held out like a pistol and nudged forward
+	# reads as somebody pointing a knife; the kit has the swing, so the arm plays it.
+	if kind == ZeeWeaponNet.KIND_SWING:
+		_swing = 0.0
+
+
+## Puts the right arm where the kit's `attack-melee-right` clip has it [param seconds] in.
+## False once the clip is over. Sampled from the clip's rotation track for that arm alone.
+func _swing_arm(seconds: float) -> bool:
+	if _anim == null or not _anim.has_animation(SWING_CLIP):
+		return false
+
+	var clip := _anim.get_animation(SWING_CLIP)
+
+	if seconds > clip.length:
+		return false
+
+	for track in clip.get_track_count():
+		if clip.track_get_type(track) == Animation.TYPE_ROTATION_3D \
+				and String(clip.track_get_path(track)).ends_with("arm-right"):
+			_arm.quaternion = clip.rotation_track_interpolate(track, seconds)
+			return true
+
+	return false
+
+
+const SWING_CLIP := &"attack-melee-right"
 
 
 ## The node a held weapon hangs from, by the name [ZeeWorldModel] asks for.
@@ -399,6 +443,7 @@ func describe() -> Dictionary:
 		"visible": visible,
 		"clip": String(clip),
 		"holding": String(holding),
+		"swinging": _swing >= 0.0,
 		"carrying": carrying,
 		"at": str(global_position.snapped(Vector3.ONE * 0.01)) if is_inside_tree() else "-",
 	}

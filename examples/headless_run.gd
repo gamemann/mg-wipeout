@@ -20,7 +20,7 @@ const WoProgress := preload("../game/wo_progress.gd")
 
 const SECTIONS := 22
 
-const CHECKS := 103
+const CHECKS := 105
 
 const TICK_RATE := 64
 const TICK := 1.0 / float(TICK_RATE)
@@ -823,6 +823,21 @@ func _test_the_client_settings() -> void:
 	escape.pressed = true
 	client.call("_unhandled_input", escape)
 	_check(settings != null and settings.is_open(), "and Escape opens them")
+	settings.close()
+
+	# The Tab board, held: the menu's, drawn from the local world offline.
+	var tab := InputEventKey.new()
+	tab.physical_keycode = KEY_TAB
+	tab.pressed = true
+	client.call("_unhandled_input", tab)
+	var board: DotMenuScoreboard = client.get("board")
+	_check(board != null and board.is_open() and board.rows().size() >= 1
+		and board.rows().any(func(r: Dictionary) -> bool: return bool(r.get("you", false))),
+		"Tab holds the scoreboard up, with this player on it and picked out",
+		str(board.rows()) if board != null else "no board")
+	tab.pressed = false
+	client.call("_unhandled_input", tab)
+	_check(board != null and not board.is_open() and not settings.is_open(), "and letting go puts it away")
 
 	remove_child(client)
 	client.free()

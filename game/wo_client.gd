@@ -66,8 +66,11 @@ var camera: Camera3D = null
 var weather: WoWeatherView = null
 var hud: WoHud = null
 
-## The Tab board. See [method board_rows].
-var board: DotScoreboardScreen = null
+## The Tab board, the menu's. See [method _wire_board].
+var board: DotMenuScoreboard = null
+
+## When this client started, for an offline board's "time".
+var _started_msec: int = Time.get_ticks_msec()
 var chat: WoClientChat = null
 
 ## What the game sounds like. See [WoAudio].
@@ -530,6 +533,7 @@ func _build_settings() -> void:
 		# Typing a line is the chat box's keyboard: Escape there closes the line, not
 		# opens the menu.
 		settings.menu.busy = func() -> bool: return chat != null and chat.is_typing()
+		_wire_board()
 
 
 func _build_audio() -> void:
@@ -919,57 +923,93 @@ func _build_hud() -> void:
 	hud.name = "Hud"
 	add_child(hud)
 
-	# The scoreboard is dot-ui's; what is on it is this game's: the player's face (see
-	# [method _portrait]), the name, points this match, the round's place, and ping.
-	board = DotScoreboardScreen.new()
-	board.name = "Board"
+
+
+## The Tab board: dot-menu's, with this game's columns. Built once the menu exists (see
+## [method _build_settings]).
+##
+## [b]Online it is the server's roster with this game's numbers merged in.[/b] Names, pings
+## and how long each player has been on come from dot-server, which is the only thing that
+## knows them for everybody; points, the round's place, the face and the side are already
+## replicated here, so they are joined in by id rather than sent twice. Offline there is no
+## server and the board is [method board_snapshot], all local.
+func _wire_board() -> void:
+	if settings == null or settings.menu == null:
+		return
+	board = settings.menu.scoreboard
 	board.title_text = "Wipeout"
 	board.columns = [
-		{"key": &"avatar", "kind": &"icon", "width": 0.0, "size": 30.0},
+		{"key": &"avatar", "kind": DotMenuScoreboard.KIND_AVATAR, "width": 0.0},
 		{"key": &"name", "title": "Player", "width": 3.0},
-		{"key": &"points", "title": "Points", "align": HORIZONTAL_ALIGNMENT_RIGHT},
+		{"key": &"points", "title": "Points", "kind": DotMenuScoreboard.KIND_NUMBER},
 		{"key": &"place", "title": "Place", "align": HORIZONTAL_ALIGNMENT_RIGHT},
-		{"key": &"ping", "title": "Ping", "align": HORIZONTAL_ALIGNMENT_RIGHT},
+		{"key": &"seconds", "title": "Time", "kind": DotMenuScoreboard.KIND_DURATION},
+		{"key": &"ping", "title": "Ping", "kind": DotMenuScoreboard.KIND_PING},
 	]
-	board.row_fn = board_rows
-	board.visible = false
-	board.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	hud.add_child(board)
+	board.sort_with = func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a.get("points", 0)) != int(b.get("points", 0)):
+			return int(a.get("points", 0)) > int(b.get("points", 0))
+		return str(a.get("name", "")) < str(b.get("name", ""))
+	board.decorate = _decorate_row
+	board.prepare = _prepare_board
+	if not _offline and link != null:
+		board.feed_from(link)
+	else:
+		board.source = board_snapshot
 
 
 func _show_board(on: bool) -> void:
 	if board == null:
 		return
-	board.visible = on
 	if on:
-		board.title_text = "Wipeout  -  %s" % str(game.course_doc.get("name", "")) if game != null else "Wipeout"
-		board.refresh()
+		board.open()
+	else:
+		board.close()
 
 
-## The rows: best points first, then furthest along. Public so a suite can read them.
-func board_rows() -> Array:
-	var rows: Array = []
+## This game's numbers onto a row of the server's roster, by id.
+func _decorate_row(row: Dictionary) -> void:
 	if game == null:
-		return rows
-	var ids := game.players.keys()
-	ids.sort_custom(func(a: StringName, b: StringName) -> bool:
-		var pa: WoPlayer = game.players[a]
-		var pb: WoPlayer = game.players[b]
-		if pa.points != pb.points:
-			return pa.points > pb.points
-		return String(a) < String(b)
-	)
-	for id in ids:
-		var who: WoPlayer = game.players[id]
-		rows.append({
-			&"avatar": _face(who),
-			&"name": who.display_name,
-			&"points": who.points,
-			&"place": (str(who.place) if who.finished else ("out" if who.watching else "-")),
-			&"ping": (str(who.ping_ms) if who.ping_ms >= 0 else "-"),
-			"highlight": who == player,
-		})
-	return rows
+		return
+	var who: WoPlayer = game.players.get(WoNetBridge.player_key(int(row.get("id", 0))))
+	if who == null:
+		who = game.players.get(StringName(str(row.get("id", ""))))
+	if who == null:
+		return
+	row["avatar"] = _face(who)
+	row["points"] = who.points
+	row["place"] = str(who.place) if who.finished else ("out" if who.watching else "-")
+	row["team"] = who.team
+	if int(row.get("ping", -1)) < 0 and who.ping_ms >= 0:
+		row["ping"] = who.ping_ms
+	if who == player:
+		row["you"] = true
+
+
+## The course in the header, and the sides when the round has them.
+func _prepare_board(snap: Dictionary) -> void:
+	if game == null:
+		return
+	snap["header"] = {"Course": str(game.course_doc.get("name", ""))}
+	if game.config.teams():
+		var sides: Array = []
+		for side in range(1, game.config.team_count + 1):
+			sides.append({"id": side, "name": game.side_name(side), "color": game.side_colour(side)})
+		snap["teams"] = sides
+
+
+## The board offline: every player in the local world. Public so a suite can read it.
+func board_snapshot() -> Dictionary:
+	var players: Array = []
+	if game != null:
+		for id in game.players:
+			var who: WoPlayer = game.players[id]
+			players.append({"id": String(id), "name": who.display_name, "seconds": _seconds_here(), "ping": -1, "bot": who.is_bot})
+	return {"server": {"name": "Wipeout", "game": "offline"}, "players": players}
+
+
+func _seconds_here() -> int:
+	return int((Time.get_ticks_msec() - _started_msec) / 1000)
 
 
 ## The player's face for the board: their figure's head, rendered once per skin.
